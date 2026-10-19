@@ -20,7 +20,7 @@ ApplicationWindow {
         { name: "ffb", label: "Force Feedback", icon: Theme.icFfb, title: "Force Feedback",
           subtitle: "Siła i charakter efektów – zmiany działają natychmiast" },
         { name: "base", label: "Baza i silnik", icon: Theme.icBase, title: "Baza i silnik",
-          subtitle: "Zasilanie, silnik, enkoder, regulator i informacje o urządzeniu" },
+          subtitle: "Silnik, enkoder, ograniczenia, kalibracja i informacje o urządzeniu" },
         { name: "pedals", label: "Pedały", icon: Theme.icPedals, title: "Pedały",
           subtitle: "Podgląd gazu i hamulca (load cell)" },
         { name: "wheel", label: "Kierownica", icon: Theme.icWheel, title: "Kierownica",
@@ -213,7 +213,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             label: "Baza Direct Drive"
                             ok: backend.baseConnected
-                            detail: backend.baseSimulated ? "Symulacja" : (backend.firmware ? "FFBeast " + backend.firmware : "")
+                            detail: backend.firmwareName + " " + backend.firmware + (backend.baseSimulated ? " · symulacja" : "")
                         }
                         StatusRow {
                             Layout.fillWidth: true

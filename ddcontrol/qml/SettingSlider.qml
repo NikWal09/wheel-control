@@ -5,15 +5,17 @@ import QtQuick.Layouts
 // Suwak jednego ustawienia bazy - styl "tuning menu".
 ColumnLayout {
     id: root
-    property string key
-    property string label
-    property string description: ""
-    property string unit: "%"
-    property real from: backend.limits[key] ? backend.limits[key].min : 0
-    property real to: backend.limits[key] ? backend.limits[key].max : 100
-    property real stepSize: 1
-    property var presets: []
+    property var field: ({})          // opis pola z backend.schema / backend.fieldMap
     property bool compact: false
+    readonly property string key: field.key || ""
+    readonly property string label: field.label || ""
+    readonly property string description: field.description || ""
+    readonly property string unit: field.unit !== undefined ? field.unit : "%"
+    readonly property real scale: field.scale || 1
+    readonly property real from: field.sliderMin !== undefined ? field.sliderMin : 0
+    readonly property real to: field.sliderMax !== undefined ? field.sliderMax : 100
+    readonly property real stepSize: field.step || 1
+    readonly property var presets: field.presets || []
     readonly property real deviceValue: backend.settings[key] !== undefined ? backend.settings[key] : from
     readonly property bool live: backend.baseConnected
 
@@ -32,7 +34,7 @@ ColumnLayout {
             elide: Text.ElideRight
         }
         Text {
-            text: root.live ? Math.round(slider.value) : "–"
+            text: root.live ? Math.round(slider.value * root.scale) : "–"
             font.family: Theme.fontDisplay
             font.pixelSize: root.compact ? 20 : 24
             font.weight: Font.DemiBold
@@ -104,7 +106,7 @@ ColumnLayout {
             model: root.presets
             delegate: Chip {
                 required property var modelData
-                text: modelData + root.unit
+                text: Math.round(modelData * root.scale) + root.unit
                 active: root.live && Math.round(slider.value) === modelData
                 enabled: root.live
                 onClicked: backend.setSetting(root.key, modelData)

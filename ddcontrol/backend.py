@@ -1,4 +1,4 @@
-"""Most między logiką (baza FFBeast, gamepady, profile) a interfejsem QML."""
+"""Most między logiką (baza, gamepady, profile) a interfejsem QML."""
 from __future__ import annotations
 
 import time
@@ -6,10 +6,11 @@ from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
 
-from .ffbeast import protocol as p
-from .ffbeast.device import WheelBaseLink
+from .core import BaseLink, DeviceInfo, FirmwareSpec
+from .ffbeast.driver import FFBeastLink
 from .gamepads import (AXIS_NAMES, JoystickReader, SimulatedJoysticks, guess_role)
-from .storage import PROFILE_KEYS, Store
+from .openffboard.driver import OpenFFBoardLink
+from .storage import Store
 
 UI_RATE_MS = 16          # ~60 Hz odświeżania podglądu
 ENUMERATE_EVERY_S = 3.0  # jak często szukać nowych kontrolerów
@@ -17,9 +18,21 @@ LEARN_TIMEOUT_S = 8.0
 WHEEL_SLOTS = 14         # 12 przycisków na panelu + 2 łopatki
 PEDALS = ("throttle", "brake")
 
+LINKS: dict[str, type[BaseLink]] = {"ffbeast": FFBeastLink, "openffboard": OpenFFBoardLink}
+SPECS: dict[str, FirmwareSpec] = {k: cls.spec for k, cls in LINKS.items()}
+
+ACTION_TOASTS = {
+    "zero": ("Ustawiono środek kierownicy", "success"),
+    "calibrate": ("Kalibracja uruchomiona – nie dotykaj kierownicy", "info"),
+    "test": ("Test obrotu uruchomiony – nie dotykaj kierownicy", "info"),
+    "reboot": ("Restart bazy…", "info"),
+    "dfu": ("Baza przechodzi w tryb DFU – wgraj firmware w STM32CubeProgrammer", "info"),
+}
+
 
 class Backend(QObject):
     baseChanged = Signal()
+    specChanged = Signal()
     stateChanged = Signal()
     settingsChanged = Signal()
     dirtyChanged = Signal()
@@ -32,19 +45,21 @@ class Backend(QObject):
     appearanceChanged = Signal()
     toast = Signal(str, str, arguments=["message", "kind"])  # kind: info|success|error
 
-    def __init__(self, store: Store | None = None, simulate: bool | None = None) -> None:
+    def __init__(self, store: Store | None = None, simulate: bool | None = None,
+                 links: list[BaseLink] | None = None) -> None:
         super().__init__()
         self._store = store or Store()
         self._simulation = bool(self._store.get("simulation", False) if simulate is None else simulate)
 
-        self._link = WheelBaseLink(simulate=self._simulation)
-        self._base_info = None
-        self._license: p.LicenseInfo | None = None
+        self._links: list[BaseLink] = links if links is not None else self._make_links()
+        self._active: BaseLink | None = None
+        self._info: DeviceInfo | None = None
         self._settings: dict[str, int] = {}
         self._dirty = False
         self._position = 0.0
         self._torque = 0.0
         self._peak_torque = 0.0
+        self._started = False
 
         self._real_joys = JoystickReader()
         self._sim_joys = SimulatedJoysticks()
@@ -65,19 +80,41 @@ class Backend(QObject):
 
     # --- cykl życia -------------------------------------------------------------
 
+    def _make_links(self) -> list[BaseLink]:
+        if self._simulation:
+            return [LINKS[self.demoFirmware](simulate=True)]
+        # bez symulacji szukamy obu firmware'ów naraz - aktywny jest ten, który odpowie
+        return [cls() for cls in LINKS.values()]
+
     def start(self) -> None:
-        self._link.start()
+        self._started = True
+        for link in self._links:
+            link.start()
         self._enumerate_joysticks()
         self._timer.start()
 
     @Slot()
     def shutdown(self) -> None:
         self._timer.stop()
-        self._link.stop()
+        for link in self._links:
+            link.stop()
+
+    def _restart_links(self) -> None:
+        for link in self._links:
+            link.stop()
+        if self._active is not None:
+            self._on_disconnected(silent=True)
+        self._links = self._make_links()
+        if self._started:
+            for link in self._links:
+                link.start()
+        self.specChanged.emit()
+        self.profilesChanged.emit()
+        self.profileStatusChanged.emit()
 
     def _tick(self) -> None:
         self._drain_events()
-        state = self._link.latest_state
+        state = self._active.latest_state if self._active else None
         if state is not None:
             self._position, self._torque = state.position, state.torque
             self._peak_torque = max(abs(self._torque), self._peak_torque * 0.995)
@@ -87,65 +124,139 @@ class Backend(QObject):
         self._poll_inputs()
 
     def _drain_events(self) -> None:
-        while not self._link.events.empty():
-            ev = self._link.events.get_nowait()
-            if ev.kind == "connected":
-                self._base_info = ev.data
-                self._dirty = False
-                self.dirtyChanged.emit()
-                self.baseChanged.emit()
-                self.toast.emit("Połączono z bazą" + (" (symulacja)" if ev.data.simulated else ""),
-                                "success")
-            elif ev.kind == "disconnected":
-                self._base_info = None
-                self._license = None
-                self._position = self._torque = 0.0
-                self.baseChanged.emit()
-                self.stateChanged.emit()
-                self.toast.emit("Baza odłączona", "info")
-            elif ev.kind == "license":
-                self._license = ev.data
-                self.baseChanged.emit()
-            elif ev.kind == "settings":
-                self._settings = dict(ev.data)
-                self.settingsChanged.emit()
-                self.profileStatusChanged.emit()
-            elif ev.kind == "saved":
-                self._dirty = False
-                self.dirtyChanged.emit()
-                self.toast.emit("Ustawienia zapisane w pamięci bazy", "success")
-            elif ev.kind == "error":
-                self.toast.emit(str(ev.data), "error")
+        for link in self._links:
+            while not link.events.empty():
+                ev = link.events.get_nowait()
+                if ev.kind == "connected":
+                    if self._active is None:
+                        self._on_connected(link, ev.data)
+                    continue
+                if link is not self._active:
+                    continue  # np. druga baza podłączona naraz - ignorujemy
+                self._handle_event(ev)
+
+    def _on_connected(self, link: BaseLink, info: DeviceInfo) -> None:
+        firmware_changed = self.firmwareId != link.spec.id
+        self._active, self._info = link, info
+        self._store.set("lastFirmware", link.spec.id)
+        self._dirty = False
+        self.dirtyChanged.emit()
+        if firmware_changed:
+            self.specChanged.emit()
+            self.profilesChanged.emit()
+        self.baseChanged.emit()
+        self.toast.emit(f"Połączono z bazą {link.spec.name}" + (" (symulacja)" if info.simulated else ""),
+                        "success")
+
+    def _on_disconnected(self, silent: bool = False) -> None:
+        self._active, self._info = None, None
+        self._settings = {}
+        self._position = self._torque = 0.0
+        self.baseChanged.emit()
+        self.settingsChanged.emit()
+        self.stateChanged.emit()
+        if not silent:
+            self.toast.emit("Baza odłączona", "info")
+
+    def _handle_event(self, ev) -> None:
+        if ev.kind == "disconnected":
+            self._on_disconnected()
+        elif ev.kind == "settings":
+            self._settings = dict(ev.data)
+            self.settingsChanged.emit()
+            self.profileStatusChanged.emit()
+        elif ev.kind == "saved":
+            self._dirty = False
+            self.dirtyChanged.emit()
+            self.toast.emit("Ustawienia zapisane w pamięci bazy", "success")
+        elif ev.kind == "action":
+            message, kind = ACTION_TOASTS.get(ev.data, ("Wykonano", "success"))
+            self.toast.emit(message, kind)
+        elif ev.kind == "error":
+            self.toast.emit(str(ev.data), "error")
+
+    # --- firmware i opis ustawień ---------------------------------------------------
+
+    @property
+    def spec(self) -> FirmwareSpec:
+        if self._active is not None:
+            return self._active.spec
+        if self._simulation:
+            return SPECS[self.demoFirmware]
+        return SPECS.get(self._store.get("lastFirmware") or "", SPECS["ffbeast"])
+
+    @Property(str, notify=specChanged)
+    def firmwareId(self) -> str:
+        return self.spec.id
+
+    @Property(str, notify=specChanged)
+    def firmwareName(self) -> str:
+        return self.spec.name
+
+    @Property(str, notify=specChanged)
+    def controllerName(self) -> str:
+        return self.spec.controller
+
+    @Property("QVariantList", notify=specChanged)
+    def schema(self) -> list:
+        return [s.to_qml() for s in self.spec.sections]
+
+    @Property("QVariantMap", notify=specChanged)
+    def fieldMap(self) -> dict:
+        return {k: f.to_qml() for k, f in self.spec.fields().items()}
+
+    @Property("QVariantMap", notify=specChanged)
+    def strengthField(self) -> dict:
+        return self.spec.fields()[self.spec.strength_key].to_qml()
+
+    @Property("QVariantMap", notify=specChanged)
+    def rangeField(self) -> dict:
+        return self.spec.fields()[self.spec.range_key].to_qml()
+
+    @Property(str, notify=specChanged)
+    def demoFirmware(self) -> str:
+        fw = self._store.get("demoFirmware")
+        return fw if fw in LINKS else "ffbeast"
+
+    @Slot(str)
+    def setDemoFirmware(self, firmware_id: str) -> None:
+        if firmware_id not in LINKS or firmware_id == self.demoFirmware:
+            return
+        self._store.set("demoFirmware", firmware_id)
+        if self._simulation:
+            self._restart_links()
+        else:
+            self.specChanged.emit()
 
     # --- baza: status ----------------------------------------------------------
 
     @Property(bool, notify=baseChanged)
     def baseConnected(self) -> bool:
-        return self._base_info is not None
+        return self._info is not None
 
     @Property(bool, notify=baseChanged)
     def baseSimulated(self) -> bool:
-        return bool(self._base_info and self._base_info.simulated)
+        return bool(self._info and self._info.simulated)
 
     @Property(str, notify=baseChanged)
     def baseName(self) -> str:
-        if not self._base_info:
-            return ""
-        return self._base_info.product or "FFBeast Wheel"
+        return self._info.product if self._info else ""
 
     @Property(str, notify=baseChanged)
     def firmware(self) -> str:
-        return str(self._license.firmware) if self._license else ""
+        return self._info.version if self._info else ""
 
-    @Property(bool, notify=baseChanged)
-    def licensed(self) -> bool:
-        return bool(self._license and self._license.registered)
+    @Property("QVariantList", notify=baseChanged)
+    def deviceDetails(self) -> list:
+        if not self._info:
+            return [{"k": "Status", "v": "Niepodłączona"}]
+        return [{"k": k, "v": v} for k, v in self._info.details]
 
-    @Property(str, notify=baseChanged)
-    def deviceId(self) -> str:
-        if not self._license:
-            return ""
-        return "-".join(f"{x:08X}" for x in self._license.device_id)
+    @Property("QVariantList", notify=baseChanged)
+    def actions(self) -> list:
+        caps = self._info.capabilities if self._info else set()
+        return [a.to_qml() for a in self.spec.actions
+                if not a.requires or not self._info or a.requires in caps]
 
     @Property(bool, notify=baseChanged)
     def simulation(self) -> bool:
@@ -157,7 +268,7 @@ class Backend(QObject):
             return
         self._simulation = enabled
         self._store.set("simulation", enabled)
-        self._link.set_simulation(enabled)
+        self._restart_links()
         self._enumerate_joysticks()
         self.baseChanged.emit()
 
@@ -167,9 +278,13 @@ class Backend(QObject):
     def position(self) -> float:
         return self._position
 
+    @Property(int, notify=settingsChanged)
+    def motionRange(self) -> int:
+        return self._settings.get(self.spec.range_key, 0)
+
     @Property(float, notify=stateChanged)
     def angle(self) -> float:
-        return self._position * self._settings.get("motionRange", 900) / 2
+        return self._position * (self._settings.get(self.spec.range_key) or 900) / 2
 
     @Property(float, notify=stateChanged)
     def torque(self) -> float:
@@ -185,23 +300,20 @@ class Backend(QObject):
     def settings(self) -> dict:
         return self._settings
 
-    @Property("QVariantMap", constant=True)
-    def limits(self) -> dict:
-        return {k: {"min": s.minimum, "max": s.maximum} for k, s in p.FIELDS_BY_KEY.items()}
-
     @Property(bool, notify=dirtyChanged)
     def dirty(self) -> bool:
         return self._dirty
 
     @Slot(str, float)
     def setSetting(self, key: str, value: float) -> None:
-        if key not in p.FIELDS_BY_KEY or not self.baseConnected:
+        field = self.spec.fields().get(key)
+        if field is None or field.kind == "readonly" or self._active is None:
             return
-        value = p.clamp_setting(key, value)
+        value = field.clamp(value)
         if self._settings.get(key) == value:
             return
         self._settings[key] = value
-        self._link.set_setting(key, value)
+        self._active.set_setting(key, value)
         self.settingsChanged.emit()
         self.profileStatusChanged.emit()
         if not self._dirty:
@@ -210,23 +322,24 @@ class Backend(QObject):
 
     @Slot()
     def saveToBase(self) -> None:
-        self._link.send_command(p.ReportData.COMMAND_SAVE_SETTINGS)
+        if self._active:
+            self._active.run_action("save")
 
     @Slot()
     def reloadSettings(self) -> None:
-        self._link.request_reload()
+        if self._active:
+            self._active.request_reload()
         self._dirty = False
         self.dirtyChanged.emit()
 
-    @Slot()
-    def rebootBase(self) -> None:
-        self._link.send_command(p.ReportData.COMMAND_REBOOT)
-        self.toast.emit("Restart bazy…", "info")
-
-    @Slot()
-    def enterDfu(self) -> None:
-        self._link.send_command(p.ReportData.COMMAND_DFU_MODE)
-        self.toast.emit("Baza przechodzi w tryb DFU (aktualizacja firmware)", "info")
+    @Slot(str)
+    def runAction(self, action_id: str) -> None:
+        if self._active is None or self.spec.action(action_id) is None:
+            return
+        self._active.run_action(action_id)
+        if self.spec.action(action_id).ends_session:
+            message, kind = ACTION_TOASTS.get(action_id, ("Wykonano", "info"))
+            self.toast.emit(message, kind)
 
     # --- pedały i kierownica -------------------------------------------------
 
@@ -405,30 +518,33 @@ class Backend(QObject):
             self.toast.emit("Nie wykryto ruchu - spróbuj ponownie", "error")
             self.cancelLearning()
 
-    # --- profile -------------------------------------------------------------
+    # --- profile (zawsze dla aktywnego firmware'u) ------------------------------------
+
+    def _active_profile_key(self) -> str:
+        return f"activeProfile/{self.spec.id}"
 
     @Property("QVariantList", notify=profilesChanged)
     def profiles(self) -> list:
-        return self._store.profiles()
+        return self._store.profiles(self.spec)
 
     @Property(str, notify=profileStatusChanged)
     def activeProfile(self) -> str:
-        return self._store.get("activeProfile") or ""
+        return self._store.get(self._active_profile_key()) or ""
 
     @Property(bool, notify=profileStatusChanged)
     def profileModified(self) -> bool:
-        prof = self._store.profile(self.activeProfile)
+        prof = self._store.profile(self.spec, self.activeProfile)
         if not prof or not self._settings:
             return False
-        return any(self._settings.get(k) != v for k, v in prof["settings"].items())
+        return any(k in self._settings and self._settings[k] != v for k, v in prof["settings"].items())
 
-    @Property("QVariantList", constant=True)
+    @Property("QVariantList", notify=specChanged)
     def profileKeys(self) -> list:
-        return list(PROFILE_KEYS)
+        return list(self.spec.profile_keys)
 
     @Slot(str)
     def applyProfile(self, name: str) -> None:
-        prof = self._store.profile(name)
+        prof = self._store.profile(self.spec, name)
         if prof is None:
             return
         if not self.baseConnected:
@@ -436,7 +552,7 @@ class Backend(QObject):
             return
         for key, value in prof["settings"].items():
             self.setSetting(key, value)
-        self._store.set("activeProfile", name)
+        self._store.set(self._active_profile_key(), name)
         self.profileStatusChanged.emit()
         self.toast.emit(f"Zastosowano profil „{name}”", "success")
 
@@ -446,21 +562,23 @@ class Backend(QObject):
         if not name or not self._settings:
             return
         try:
-            self._store.save_profile(name, {k: self._settings[k] for k in PROFILE_KEYS},
+            self._store.save_profile(self.spec, name,
+                                     {k: self._settings[k] for k in self.spec.profile_keys
+                                      if k in self._settings},
                                      game.strip() or "Własny")
         except ValueError as exc:
             self.toast.emit(str(exc), "error")
             return
-        self._store.set("activeProfile", name)
+        self._store.set(self._active_profile_key(), name)
         self.profilesChanged.emit()
         self.profileStatusChanged.emit()
         self.toast.emit(f"Zapisano profil „{name}”", "success")
 
     @Slot(str)
     def deleteProfile(self, name: str) -> None:
-        self._store.delete_profile(name)
+        self._store.delete_profile(self.spec, name)
         if self.activeProfile == name:
-            self._store.set("activeProfile", None)
+            self._store.set(self._active_profile_key(), None)
         self.profilesChanged.emit()
         self.profileStatusChanged.emit()
         self.toast.emit(f"Usunięto profil „{name}”", "info")
@@ -468,7 +586,7 @@ class Backend(QObject):
     @Slot(str, QUrl)
     def exportProfile(self, name: str, url: QUrl) -> None:
         try:
-            self._store.export_profile(name, Path(url.toLocalFile()))
+            self._store.export_profile(self.spec, name, Path(url.toLocalFile()))
             self.toast.emit("Wyeksportowano profil", "success")
         except (OSError, KeyError) as exc:
             self.toast.emit(f"Eksport nieudany: {exc}", "error")
@@ -476,7 +594,7 @@ class Backend(QObject):
     @Slot(QUrl)
     def importProfile(self, url: QUrl) -> None:
         try:
-            name = self._store.import_profile(Path(url.toLocalFile()))
+            name = self._store.import_profile(self.spec, Path(url.toLocalFile()))
         except (OSError, ValueError) as exc:
             self.toast.emit(f"Import nieudany: {exc}", "error")
             return

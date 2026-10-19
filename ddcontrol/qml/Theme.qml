@@ -55,28 +55,29 @@ QtObject {
     readonly property string icChart: ""
     readonly property string icUndo: ""
 
-    readonly property var fieldLabels: ({
-        motionRange: "Kąt obrotu",
-        totalStrength: "Siła całkowita",
-        integratedSpring: "Sprężyna wbudowana",
-        staticDampening: "Tłumienie statyczne",
-        dynamicDampening: "Tłumienie dynamiczne",
-        dxConstantStrength: "Siła stała (gra)",
-        dxSpringStrength: "Sprężyna (gra)",
-        dxPeriodicStrength: "Efekty okresowe (gra)",
-        dxConstantDirection: "Kierunek sił z gry",
-        softStopStrength: "Soft stop – siła",
-        softStopRange: "Soft stop – zakres",
-        softStopDampening: "Soft stop – tłumienie"
-    })
+    readonly property string icCenter: ""
 
-    function formatField(key, value) {
-        if (value === undefined)
+    // Ikony po nazwie - używane przez opis ustawień z Pythona (sekcje, akcje).
+    function icon(name) {
+        return ({
+            ffb: icFfb, wheel: icWheel, base: icBase, warning: icWarning, power: icPower,
+            tune: icPedals, diag: icDiag, center: icCenter, sync: icRefresh, import: icImport,
+            info: icInfo, save: icSave
+        })[name] || icInfo
+    }
+
+    // Wartość pola do wyświetlenia (pole = backend.fieldMap[klucz]).
+    function formatField(field, value) {
+        if (value === undefined || value === null || !field)
             return "–"
-        if (key === "motionRange" || key === "softStopRange")
-            return value + "°"
-        if (key === "dxConstantDirection")
-            return value < 0 ? "Odwrócony" : "Normalny"
-        return value + "%"
+        if (field.kind === "choice") {
+            const opt = field.options.find(o => o.value === value)
+            return opt ? opt.label : String(value)
+        }
+        if (field.kind === "toggle")
+            return value ? "Wł." : "Wył."
+        const shown = Math.round(value * field.scale)
+        return field.unit === "%" || field.unit === "°" ? shown + field.unit
+             : (shown + " " + field.unit).trim()
     }
 }

@@ -12,7 +12,7 @@ PageBase {
         Layout.fillWidth: true
         spacing: 10
         Text {
-            text: backend.profiles.length + " profili"
+            text: backend.profiles.length + " profili dla firmware'u " + backend.firmwareName
             font.pixelSize: 13
             color: Theme.textDim
             Layout.fillWidth: true
@@ -41,7 +41,10 @@ PageBase {
 
         // ----- lista -----
         ColumnLayout {
+            // stała szerokość listy - bez tego wypełniające dzieci rozpychają ją na całą stronę
+            Layout.fillWidth: false
             Layout.preferredWidth: page.wide ? 360 : 300
+            Layout.maximumWidth: Layout.preferredWidth
             Layout.alignment: Qt.AlignTop
             spacing: 10
 
@@ -148,6 +151,7 @@ PageBase {
                     model: backend.profileKeys
                     delegate: Rectangle {
                         required property string modelData
+                        readonly property var field: backend.fieldMap[modelData]
                         readonly property var value: page.profile ? page.profile.settings[modelData] : undefined
                         readonly property var current: backend.settings[modelData]
                         readonly property bool differs: backend.baseConnected && value !== undefined && current !== value
@@ -159,19 +163,19 @@ PageBase {
                             anchors.fill: parent
                             spacing: 8
                             Text {
-                                text: Theme.fieldLabels[modelData] || modelData
+                                text: parent.parent.field ? parent.parent.field.label : modelData
                                 font.pixelSize: 13
                                 color: Theme.textDim
                                 Layout.fillWidth: true
                             }
                             Text {
                                 visible: parent.parent.differs
-                                text: Theme.formatField(modelData, parent.parent.current) + "  →"
+                                text: Theme.formatField(parent.parent.field, parent.parent.current) + "  →"
                                 font.pixelSize: 12
                                 color: Theme.textFaint
                             }
                             Text {
-                                text: Theme.formatField(modelData, parent.parent.value)
+                                text: Theme.formatField(parent.parent.field, parent.parent.value)
                                 font.family: Theme.fontDisplay
                                 font.pixelSize: 16
                                 font.weight: Font.DemiBold

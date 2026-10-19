@@ -26,6 +26,14 @@ PageBase {
                 checked: backend.simulation
                 onToggled: c => backend.setSimulation(c)
             }
+            Segmented {
+                Layout.fillWidth: true
+                label: "Firmware symulowanej bazy"
+                options: [{ label: "FFBeast", value: "ffbeast" }, { label: "OpenFFBoard", value: "openffboard" }]
+                value: backend.demoFirmware
+                onPicked: v => backend.setDemoFirmware(v)
+                description: "Bez symulacji aplikacja sama wykrywa, który firmware jest podłączony."
+            }
         }
 
         Card {
@@ -78,8 +86,12 @@ PageBase {
             color: Theme.textDim
             text: "<b style='color:#F2F4F7'>DD Control " + appVersion + "</b> – oprogramowanie do zestawu DIY Direct Drive "
                 + "(Politechnika Poznańska).<br>"
-                + "Baza: MKS XDrive Mini + firmware FFBeast, komunikacja przez USB HID (VID 1115, PID 22999, "
-                + "interfejs vendor). Ustawienia zmieniane są na żywo; przycisk <i>Zapisz w bazie</i> utrwala je w pamięci flash.<br>"
+                + "<b style='color:#F2F4F7'>OpenFFBoard</b> (MKS XDrive Mini z MotorXDrive): wirtualny port COM, "
+                + "USB 1209:FFB0, komendy tekstowe <i>klasa.instancja.komenda</i>. Windows pozwala otworzyć "
+                + "port COM tylko jednemu programowi – zamknij OpenFFBoard Configurator przed użyciem DD Control "
+                + "(i odwrotnie).<br>"
+                + "<b style='color:#F2F4F7'>FFBeast</b>: USB HID 1115:22999, interfejs vendor.<br>"
+                + "Ustawienia zmieniane są na żywo; <i>Zapisz w bazie</i> utrwala je w pamięci flash. "
                 + "Pedały i kierownica są odczytywane jako standardowe kontrolery gier Windows.<br>"
                 + "Profile i konfiguracja: %APPDATA%\\DDControl."
         }

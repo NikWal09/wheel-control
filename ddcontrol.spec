@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[("ddcontrol/qml", "ddcontrol/qml"), ("ddcontrol/assets", "ddcontrol/assets")],
-    hiddenimports=["hid"],
+    hiddenimports=["hid", "serial", "serial.tools.list_ports"],
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.Qt3DCore", "PySide6.QtMultimedia"],
 )
 # Hooki PySide6 dorzucają wszystkie moduły QML (WebEngine, 3D, ...). Aplikacja używa tylko

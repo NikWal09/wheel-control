@@ -4,12 +4,13 @@ import QtQuick.Layouts
 // Pole liczbowe z przyciskami -/+ dla ustawień całkowitych (pary biegunów, CPR, wzmocnienia).
 ColumnLayout {
     id: root
-    property string key
-    property string label
-    property string description: ""
-    property int step: 1
-    readonly property int minimum: backend.limits[key] ? backend.limits[key].min : 0
-    readonly property int maximum: backend.limits[key] ? backend.limits[key].max : 100
+    property var field: ({})
+    readonly property string key: field.key || ""
+    readonly property string label: field.label || ""
+    readonly property string description: field.description || ""
+    readonly property int step: field.step || 1
+    readonly property int minimum: field.min !== undefined ? field.min : 0
+    readonly property int maximum: field.max !== undefined ? field.max : 100
     readonly property var deviceValue: backend.settings[key]
     readonly property bool live: backend.baseConnected
 

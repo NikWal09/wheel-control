@@ -29,6 +29,7 @@ def _screenshot_tour(engine: QQmlApplicationEngine, out_dir: Path, app: QGuiAppl
     names = window.property("pageNames")  # QJSValue z tablicą JS
     pages = names.toVariant() if hasattr(names, "toVariant") else list(names)
     order = list(range(len(pages)))
+    window.setProperty("height", 1500)  # cała strona na jednym zrzucie
 
     def shoot(i: int = 0) -> None:
         if i >= len(order):

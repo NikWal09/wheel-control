@@ -6,7 +6,8 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QCoreApplication, QUrl  # noqa: E402
 
 from ddcontrol.backend import Backend  # noqa: E402
-from ddcontrol.storage import BUILTIN_PROFILES, Store  # noqa: E402
+from ddcontrol.ffbeast.driver import BUILTIN_PROFILES  # noqa: E402
+from ddcontrol.storage import Store  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +41,7 @@ def test_connects_to_simulator_and_streams_state(app, backend):
 
 
 def test_setting_change_reaches_base_and_save_persists(app, backend):
-    sim = backend._link._sim
+    sim = backend._active._sim
     backend.setSetting("totalStrength", 42)
     assert backend.dirty
     assert spin(app, lambda: sim.effects["totalStrength"] == 42)
@@ -51,13 +52,13 @@ def test_setting_change_reaches_base_and_save_persists(app, backend):
 
 
 def test_out_of_range_value_is_clamped(app, backend):
-    sim = backend._link._sim
+    sim = backend._active._sim
     backend.setSetting("powerLimit", 500)
     assert spin(app, lambda: sim.hardware["powerLimit"] == 100)
 
 
 def test_apply_and_save_profile(app, backend):
-    sim = backend._link._sim
+    sim = backend._active._sim
     backend.applyProfile("F1 25")
     expected = BUILTIN_PROFILES["F1 25"]["settings"]
     assert spin(app, lambda: all(sim.effects[k] == v for k, v in expected.items()))
@@ -79,10 +80,10 @@ def test_export_import_profile(app, backend, tmp_path):
 
 
 def test_reboot_reconnects_with_flash_settings(app, backend):
-    sim = backend._link._sim
+    sim = backend._active._sim
     backend.setSetting("motionRange", 540)
     assert spin(app, lambda: sim.effects["motionRange"] == 540)
-    backend.rebootBase()  # niezapisane -> po restarcie wraca wartość z flash
+    backend.runAction("reboot")  # niezapisane -> po restarcie wraca wartość z flash
     assert spin(app, lambda: not backend.baseConnected)
     assert spin(app, lambda: backend.baseConnected and backend.settings.get("motionRange") == 900)
 
@@ -91,3 +92,37 @@ def test_pedal_learning(app, backend):
     backend.learnPedal("brake")
     # symulator naciska pedały cyklicznie - prędzej czy później któraś oś ruszy
     assert spin(app, lambda: backend.learning == "", timeout=9)
+
+
+@pytest.fixture
+def offb_backend(app, tmp_path):
+    store = Store(tmp_path)
+    store.set("demoFirmware", "openffboard")
+    b = Backend(store, simulate=True)
+    b.start()
+    assert spin(app, lambda: b.baseConnected and b.settings)
+    yield b
+    b.shutdown()
+
+
+def test_openffboard_demo_uses_its_own_schema_and_profiles(app, offb_backend):
+    b = offb_backend
+    assert b.firmwareId == "openffboard" and b.firmware == "1.17.1"
+    keys = {f["key"] for s in b.schema for f in s["fields"]}
+    assert "axis.0.power" in keys and "totalStrength" not in keys
+    assert b.strengthField["key"] == "axis.0.power" and b.motionRange == 900
+    assert {a["id"] for a in b.actions} >= {"calibrate", "test", "zero", "dfu"}
+
+    sim = b._active._sim
+    b.applyProfile("F1 25")
+    assert spin(app, lambda: sim.values["axis.0.degrees"] == 360)
+    assert b.activeProfile == "F1 25"
+    b.runAction("calibrate")
+    assert spin(app, lambda: "xdrive.0.cal?" in sim.received)
+
+
+def test_switching_demo_firmware_restarts_link(app, backend):
+    assert backend.firmwareId == "ffbeast"
+    backend.setDemoFirmware("openffboard")
+    assert spin(app, lambda: backend.baseConnected and backend.firmwareId == "openffboard")
+    assert "axis.0.degrees" in backend.settings

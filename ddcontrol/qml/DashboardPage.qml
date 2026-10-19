@@ -38,7 +38,7 @@ PageBase {
                     width: stage.dial
                     height: stage.dial
                     property real angle: backend.angle
-                    property real range: backend.settings.motionRange || 900
+                    property real range: backend.motionRange || 900
                     property color accent: Theme.accent
                     onAngleChanged: requestPaint()
                     onAccentChanged: requestPaint()
@@ -91,7 +91,7 @@ PageBase {
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "zakres " + (backend.settings.motionRange || "–") + "°"
+                        text: "zakres " + (backend.motionRange || "–") + "°"
                         font.pixelSize: 12
                         color: Theme.textDim
                     }
@@ -221,8 +221,7 @@ PageBase {
 
             SettingSlider {
                 Layout.fillWidth: true
-                key: "totalStrength"
-                label: "Siła całkowita"
+                field: backend.strengthField
                 compact: true
             }
             Segmented {
@@ -230,8 +229,8 @@ PageBase {
                 label: "Kąt obrotu"
                 enabled: backend.baseConnected
                 options: [360, 540, 900, 1080].map(v => ({ label: v + "°", value: v }))
-                value: backend.settings.motionRange
-                onPicked: v => backend.setSetting("motionRange", v)
+                value: backend.motionRange
+                onPicked: v => backend.setSetting(backend.rangeField.key, v)
             }
             Item { Layout.fillHeight: true }
         }

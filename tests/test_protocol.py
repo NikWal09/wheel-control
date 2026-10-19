@@ -4,9 +4,9 @@ import time
 import pytest
 
 from ddcontrol.ffbeast import protocol as p
-from ddcontrol.ffbeast.device import WheelBaseLink
+from ddcontrol.ffbeast.driver import SPEC, FFBeastLink
 from ddcontrol.ffbeast.simulator import DEFAULT_EFFECTS, DEFAULT_HARDWARE, SimulatedWheelBase
-from ddcontrol.storage import BUILTIN_PROFILES, Store
+from ddcontrol.storage import Store
 
 
 def test_struct_layouts_match_documentation():
@@ -80,7 +80,7 @@ def _wait(cond, timeout=3.0):
 
 def test_link_end_to_end_with_simulator():
     sim = SimulatedWheelBase()
-    link = WheelBaseLink(device_factory=lambda: sim)
+    link = FFBeastLink(device_factory=lambda: sim)
     link.start()
     try:
         assert _wait(lambda: link.connected and link.latest_state is not None)
@@ -97,23 +97,40 @@ def test_link_end_to_end_with_simulator():
         assert _wait(lambda: sim.effects["totalStrength"] == 75 and sim.effects["motionRange"] == 1080)
         assert sim.flash_effects["motionRange"] == 900
 
-        link.send_command(p.ReportData.COMMAND_SAVE_SETTINGS)
+        link.run_action("save")
         assert _wait(lambda: sim.flash_effects["motionRange"] == 1080)
     finally:
         link.stop()
 
 
+def test_spec_matches_protocol():
+    # każde pole protokołu ma opis w interfejsie, a profile obejmują tylko efekty
+    assert set(SPEC.fields()) == set(p.FIELDS_BY_KEY)
+    assert set(SPEC.profile_keys) == {f.key for f in p.EFFECT_FIELDS}
+    for prof in SPEC.builtin_profiles.values():
+        assert set(prof["settings"]) == set(SPEC.profile_keys)
+
+
 def test_profiles_store(tmp_path):
     store = Store(tmp_path)
-    assert {p_["name"] for p_ in store.profiles()} >= set(BUILTIN_PROFILES)
-    store.save_profile("Mój", {**DEFAULT_EFFECTS, "totalStrength": 300, "polePairs": 7})
-    mine = store.profile("Mój")
+    assert {p_["name"] for p_ in store.profiles(SPEC)} >= set(SPEC.builtin_profiles)
+    store.save_profile(SPEC, "Mój", {**DEFAULT_EFFECTS, "totalStrength": 300, "polePairs": 7})
+    mine = store.profile(SPEC, "Mój")
     assert mine["settings"]["totalStrength"] == 100  # przycięte do zakresu
     assert "polePairs" not in mine["settings"]       # profile nie ruszają sprzętu
     with pytest.raises(ValueError):
-        store.save_profile("iRacing", DEFAULT_EFFECTS)
+        store.save_profile(SPEC, "iRacing", DEFAULT_EFFECTS)
 
     out = tmp_path / "x.json"
-    store.export_profile("Mój", out)
-    assert store.import_profile(out) == "Mój (import)"
-    assert Store(tmp_path).profile("Mój (import)") is not None
+    store.export_profile(SPEC, "Mój", out)
+    assert store.import_profile(SPEC, out) == "Mój (import)"
+    assert Store(tmp_path).profile(SPEC, "Mój (import)") is not None
+
+
+def test_legacy_profiles_are_ffbeast(tmp_path):
+    # profiles.json sprzed obsługi OpenFFBoard: klucz = sama nazwa, bez pola firmware
+    import json
+    (tmp_path / "profiles.json").write_text(json.dumps(
+        {"Stary": {"game": "X", "settings": {"totalStrength": 50}}}), encoding="utf-8")
+    store = Store(tmp_path)
+    assert store.profile(SPEC, "Stary")["settings"] == {"totalStrength": 50}
