@@ -22,7 +22,7 @@ LINKS: dict[str, type[BaseLink]] = {"ffbeast": FFBeastLink, "openffboard": OpenF
 SPECS: dict[str, FirmwareSpec] = {k: cls.spec for k, cls in LINKS.items()}
 
 ACTION_TOASTS = {
-    "zero": ("Ustawiono środek kierownicy", "success"),
+    "zero": ("Kierownica wycentrowana – obecna pozycja to 0°", "success"),
     "calibrate": ("Kalibracja uruchomiona – nie dotykaj kierownicy", "info"),
     "test": ("Test obrotu uruchomiony – nie dotykaj kierownicy", "info"),
     "reboot": ("Restart bazy…", "info"),
@@ -331,6 +331,15 @@ class Backend(QObject):
             self._active.request_reload()
         self._dirty = False
         self.dirtyChanged.emit()
+
+    @Property(bool, notify=specChanged)
+    def canCenter(self) -> bool:
+        """Czy firmware pozwala ustawić środek z aplikacji (FFBeast nie ma takiej komendy)."""
+        return self.spec.action("zero") is not None
+
+    @Slot()
+    def centerWheel(self) -> None:
+        self.runAction("zero")
 
     @Slot(str)
     def runAction(self, action_id: str) -> None:

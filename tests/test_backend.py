@@ -126,3 +126,14 @@ def test_switching_demo_firmware_restarts_link(app, backend):
     backend.setDemoFirmware("openffboard")
     assert spin(app, lambda: backend.baseConnected and backend.firmwareId == "openffboard")
     assert "axis.0.degrees" in backend.settings
+
+
+def test_center_wheel(app, offb_backend):
+    assert offb_backend.canCenter
+    sim = offb_backend._active._sim
+    offb_backend.centerWheel()
+    assert spin(app, lambda: "axis.0.zeroenc?" in sim.received)
+
+
+def test_ffbeast_has_no_center_command(app, backend):
+    assert backend.firmwareId == "ffbeast" and not backend.canCenter

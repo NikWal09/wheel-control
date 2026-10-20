@@ -94,11 +94,8 @@ SECTIONS = (
 )
 
 ACTIONS = (
-    Action("zero", "Ustaw środek", "center",
-           confirm_title="Ustawić środek?",
-           confirm_text="Aktualna pozycja kierownicy stanie się pozycją zerową (axis.zeroenc). "
-                        "Ustaw kierownicę prosto przed potwierdzeniem.",
-           confirm_label="Ustaw środek"),
+    # bez potwierdzenia: nic się nie rusza, a przycisk ma być pod ręką na pulpicie
+    Action("zero", "Wycentruj", "center"),
     Action("calibrate", "Kalibracja silnika", "diag", requires="xdrive.0",
            confirm_title="Uruchomić kalibrację?",
            confirm_text="Silnik ustawi wirnik i sprawdzi kierunek enkodera (xdrive.cal). "

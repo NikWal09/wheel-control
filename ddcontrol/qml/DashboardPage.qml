@@ -23,6 +23,27 @@ PageBase {
             subtitle: backend.baseConnected ? "Pozycja i moment z bazy w czasie rzeczywistym" : "Czekam na bazę…"
             icon: Theme.icWheel
 
+            actions: [
+                AppButton {
+                    text: "Wycentruj"
+                    glyph: Theme.icCenter
+                    variant: "primary"
+                    visible: backend.canCenter
+                    enabled: backend.baseConnected
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Ustaw kierownicę prosto i kliknij – obecna pozycja stanie się środkiem (0°)"
+                    onClicked: backend.centerWheel()
+                },
+                Text {
+                    visible: !backend.canCenter && backend.baseConnected
+                    anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                    text: "Centrowanie: firmware " + backend.firmwareName + " nie udostępnia tej komendy"
+                    font.pixelSize: 12
+                    color: Theme.textDim
+                }
+            ]
+
             Item {
                 id: stage
                 Layout.fillWidth: true
