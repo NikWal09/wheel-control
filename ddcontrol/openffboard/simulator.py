@@ -39,8 +39,22 @@ DEFAULTS = {
     "xdrive.0.sensorDirection": 1,
     "xdrive.0.invert": 0,
     "xdrive.0.offset": 1837,
+    "xdrive.0.ilimit": 10000,
+    "xdrive.0.mode": 1,
+    "xdrive.0.cpr": 4096,
+    "xdrive.0.bw": 1000,
+    "xdrive.0.index": 1,
+    "xdrive.0.state": 5,
+    "xdrive.0.errors": 0,
+    "xdrive.0.vbus": 19500,
+    "xdrive.0.brake": 0,
+    "xdrive.0.res": 2000,
+    "xdrive.0.ind": 400,
+    "xdrive.0.calratio": 1003,
+    "xdrive.0.indexfound": 1,
 }
-READ_ONLY = {"axis.0.cpr", "xdrive.0.offset"}
+READ_ONLY = {"axis.0.cpr", "xdrive.0.offset", "xdrive.0.state", "xdrive.0.vbus", "xdrive.0.brake",
+             "xdrive.0.res", "xdrive.0.ind", "xdrive.0.calratio", "xdrive.0.indexfound"}
 
 
 class SimulatedOpenFFBoard:

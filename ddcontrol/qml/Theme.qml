@@ -70,13 +70,16 @@ QtObject {
     function formatField(field, value) {
         if (value === undefined || value === null || !field)
             return "–"
-        if (field.kind === "choice") {
+        if (field.options && field.options.length) {
             const opt = field.options.find(o => o.value === value)
             return opt ? opt.label : String(value)
         }
         if (field.kind === "toggle")
             return value ? "Wł." : "Wył."
-        const shown = Math.round(value * field.scale)
+        const scaled = value * field.scale
+        // przeskalowane wartości (np. mV -> V) z jednym miejscem po przecinku
+        const shown = field.scale < 1 && Math.abs(scaled) < 1000 && field.unit !== "%" ? scaled.toFixed(1)
+                    : Math.round(scaled)
         return field.unit === "%" || field.unit === "°" ? shown + field.unit
              : (shown + " " + field.unit).trim()
     }

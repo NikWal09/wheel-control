@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - zostaje tylko symulacja
     list_ports = None
 
 POLL_INTERVAL = 0.015
+LIVE_INTERVAL = 1.0  # odczyty diagnostyczne (napięcie, stan sterownika)
 QUERY_TIMEOUT = 0.6
 POWER_MAX = 0x7FFF
 G = 100 / 255  # gain 0..255 pokazywany jako %
@@ -78,18 +79,48 @@ SECTIONS = (
               description="Rozdzielczość zgłaszana przez enkoder – MT6701 ABZ: 4096 (axis.cpr)."),
     )),
     Section("base", "Silnik XDrive", "Sterownik FOC MotorXDrive (DRV8301 + MT6701)", "base", (
+        Field("xdrive.0.ilimit", "Limit prądu", 500, 30000, unit="mA", step=250, slider_max=20000,
+              description="Maksymalny prąd fazowy = maksymalny moment (xdrive.ilimit). Przy pierwszych "
+                          "testach 3000–5000 mA."),
+        Field("xdrive.0.vlimit", "Limit napięcia", 500, 24000, unit="mV", step=100, slider_max=12000,
+              description="Maksymalne napięcie na fazach (xdrive.vlimit)."),
+        Field("xdrive.0.mode", "Tryb sterowania", 0, 1, kind="choice",
+              options=(("Prądowy (FOC)", 1), ("Napięciowy", 0)),
+              description="Prądowy to normalna praca. Napięciowy tylko do diagnostyki – "
+                          "kierownica stawia opór przy szybkim obrocie (xdrive.mode)."),
         Field("xdrive.0.poles", "Pary biegunów", 1, 64, kind="stepper",
-              description="Silnik z hoverboardu ma zwykle 15 par (xdrive.poles)."),
-        Field("xdrive.0.vlimit", "Limit napięcia", 0, 24000, unit="mV", step=100,
-              description="Maksymalne napięcie podawane na fazy silnika (xdrive.vlimit)."),
+              description="Silnik z hoverboardu ma zwykle 15 par. Zmiana unieważnia kalibrację (xdrive.poles)."),
+        Field("xdrive.0.cpr", "CPR enkodera", 64, 65535, kind="stepper", step=64,
+              description="MT6701 w trybie ABZ: 1024 PPR × 4 = 4096. Zmiana unieważnia kalibrację (xdrive.cpr)."),
+        Field("xdrive.0.bw", "Pasmo regulatora prądu", 100, 5000, kind="stepper", step=100, unit="rad/s",
+              description="Szybkość pętli prądowej. Domyślnie 1000 (xdrive.bw)."),
+        Field("xdrive.0.index", "Środek z indeksu Z", 0, 1, kind="toggle",
+              description="Po włączeniu baza odtwarza zapisany środek, gdy kierownica minie impuls Z "
+                          "enkodera (xdrive.index)."),
         Field("xdrive.0.sensorDirection", "Kierunek enkodera", -1, 1, kind="choice",
               options=(("Normalny", 1), ("Odwrócony", -1)), signed_direction=True,
-              description="Wykrywany przy kalibracji; zmieniaj tylko ręcznie, jeśli wiesz po co "
-                          "(xdrive.sensorDirection)."),
-        Field("xdrive.0.invert", "Odwróć silnik", 0, 1, kind="toggle",
-              description="Odwraca kierunek momentu silnika (xdrive.invert)."),
-        Field("xdrive.0.offset", "Offset elektryczny (odczyt)", -(1 << 30), 1 << 30, kind="readonly",
-              unit="", description="Kąt elektryczny wyznaczony przy kalibracji (xdrive.offset)."),
+              description="Ustawiany przez kalibrację; ręcznie zmieniaj tylko, jeśli wiesz po co."),
+        Field("xdrive.0.invert", "Odwróć kierunek", 0, 1, kind="toggle",
+              description="Odwraca moment i pozycję razem (xdrive.invert)."),
+    )),
+    Section("base", "Diagnostyka XDrive", "Odczyty odświeżane co sekundę", "diag", (
+        Field("xdrive.0.state", "Stan sterownika", 0, 7, kind="readonly", unit="",
+              options=(("Start", 0), ("Pomiar offsetów", 1), ("Bezczynny", 2), ("Wyrównanie", 3),
+                       ("Kalibracja", 4), ("Praca", 5), ("Test", 6), ("Błąd", 7)), live=True),
+        Field("xdrive.0.errors", "Błędy (bity)", 0, 1 << 30, kind="readonly", unit="", live=True,
+              description="0 = brak. 1 DRV8301, 2 SPI, 4 offset ADC, 8 nadnapięcie, 16 podnapięcie, "
+                          "32 hamowanie za długo, 64 brak prądu przy kalibracji, 128 bieguny/CPR, "
+                          "256 rezystancja, 512 brak kalibracji, 1024 nadprąd, 2048 test przerwany."),
+        Field("xdrive.0.vbus", "Napięcie zasilania", 0, 1 << 20, kind="readonly", unit="V", scale=0.001,
+              live=True),
+        Field("xdrive.0.brake", "Rezystor hamujący", 0, 100, kind="readonly", live=True),
+        Field("xdrive.0.res", "Rezystancja fazy", 0, 65535, kind="readonly", unit="mΩ", scale=0.1),
+        Field("xdrive.0.ind", "Indukcyjność fazy", 0, 65535, kind="readonly", unit="µH"),
+        Field("xdrive.0.calratio", "Kontrola biegunów/CPR", 0, 5000, kind="readonly", unit="‰",
+              description="Ruch enkodera przy kalibracji względem oczekiwanego, 1000 = idealnie (950–1050 OK)."),
+        Field("xdrive.0.indexfound", "Indeks Z wykryty", 0, 1, kind="readonly", unit="",
+              options=(("Nie", 0), ("Tak", 1)), live=True),
+        Field("xdrive.0.offset", "Offset elektryczny", -(1 << 30), 1 << 30, kind="readonly", unit=""),
     )),
 )
 
@@ -186,6 +217,8 @@ class OpenFFBoardLink(BaseLink):
         self._pos: int | None = None
         self._torque: int | None = None
         self._last_poll = 0.0
+        self._last_live = 0.0
+        self._live_keys = [k for k, f in self._fields.items() if f.live]
         self._port_name = ""
 
     # --- wejście/wyjście ----------------------------------------------------------------
@@ -298,6 +331,11 @@ class OpenFFBoardLink(BaseLink):
 
     def _poll(self, dev) -> LiveState | None:
         now = time.monotonic()
+        if now - self._last_live >= LIVE_INTERVAL:
+            self._last_live = now
+            live = [k for k in self._live_keys if k in self._settings]
+            if live:  # odpowiedzi trafią do _handle jako zmiany ustawień
+                self._send(dev, [p.get(k) for k in live])
         if now - self._last_poll >= POLL_INTERVAL:
             self._last_poll = now
             self._pos = self._torque = None

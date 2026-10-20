@@ -42,6 +42,7 @@ class Field:
     presets: tuple[int, ...] = ()
     options: tuple[tuple[str, int], ...] = ()   # dla kind == "choice"
     signed_direction: bool = False              # wartość tylko -1 albo +1
+    live: bool = False                          # odczyt odświeżany cyklicznie (np. napięcie)
 
     def clamp(self, value) -> int:
         value = int(round(float(value)))
@@ -52,7 +53,7 @@ class Field:
     def display(self, value) -> str:
         if value is None:
             return "–"
-        if self.kind == "choice":
+        if self.options:
             return next((lbl for lbl, v in self.options if v == value), str(value))
         if self.kind == "toggle":
             return "Wł." if value else "Wył."

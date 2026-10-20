@@ -150,3 +150,22 @@ def test_reboot_restores_flash_and_reconnects(sim_link):
     assert _wait(lambda: not link.connected)
     assert _wait(lambda: link.connected, timeout=4)
     assert sim.values["axis.0.power"] == 12000
+
+
+def test_live_diagnostics_are_refreshed(sim_link):
+    sim, link = sim_link
+    _events(link)
+    sim.values["xdrive.0.vbus"] = 18200
+    assert _wait(lambda: any(e.kind == "settings" and e.data.get("xdrive.0.vbus") == 18200
+                             for e in _events(link)), timeout=3)
+
+
+def test_app_fields_match_firmware_commands():
+    """Każde pole xdrive w aplikacji musi istnieć w firmware (MotorXDrive::registerCommands)."""
+    import pathlib, re
+    fw = pathlib.Path(__file__).resolve().parents[2] / "OpenFFBoard-XDrive/Firmware/FFBoard/UserExtensions/Src/MotorXDrive.cpp"
+    if not fw.exists():
+        pytest.skip("brak repozytorium firmware obok aplikacji")
+    registered = set(re.findall(r'registerCommand\("(\w+)"', fw.read_text(encoding="utf-8")))
+    app = {k.split(".")[2] for k in SPEC.fields() if k.startswith("xdrive.")}
+    assert app <= registered, app - registered
