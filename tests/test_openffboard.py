@@ -169,3 +169,21 @@ def test_app_fields_match_firmware_commands():
     registered = set(re.findall(r'registerCommand\("(\w+)"', fw.read_text(encoding="utf-8")))
     app = {k.split(".")[2] for k in SPEC.fields() if k.startswith("xdrive.")}
     assert app <= registered, app - registered
+
+
+def test_xdrive_driver_is_selected_automatically():
+    """Płytka z axis.drvtype=None (np. stare ustawienia we flash) - aplikacja sama wybiera XDrive."""
+    sim = SimulatedOpenFFBoard(drvtype=0)
+    link = OpenFFBoardLink(port_factory=_reopening(sim))
+    link.start()
+    try:
+        assert _wait(lambda: link.connected, timeout=5)
+        events = _events(link)
+        info = next(e.data for e in events if e.kind == "connected")
+        settings = next(e.data for e in events if e.kind == "settings")
+        assert "xdrive.0" in info.capabilities
+        assert sim.values["axis.0.drvtype"] == 13 and sim.flash["axis.0.drvtype"] == 13
+        assert any(e.kind == "info" for e in events)
+        assert settings["axis.0.drvtype"] == 13 and "xdrive.0.ilimit" in settings
+    finally:
+        link.stop()

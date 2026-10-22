@@ -53,14 +53,16 @@ DEFAULTS = {
     "xdrive.0.calratio": 1003,
     "xdrive.0.indexfound": 1,
 }
+XDRIVE_DRVTYPE = 13  # MotorDriver::all_drivers w firmware
 READ_ONLY = {"axis.0.cpr", "xdrive.0.offset", "xdrive.0.state", "xdrive.0.vbus", "xdrive.0.brake",
              "xdrive.0.res", "xdrive.0.ind", "xdrive.0.calratio", "xdrive.0.indexfound"}
 
 
 class SimulatedOpenFFBoard:
-    def __init__(self, with_xdrive: bool = True) -> None:
+    def __init__(self, with_xdrive: bool = True, drvtype: int = XDRIVE_DRVTYPE) -> None:
         self.with_xdrive = with_xdrive
         self.values = {k: v for k, v in DEFAULTS.items() if with_xdrive or not k.startswith("xdrive")}
+        self.values["axis.0.drvtype"] = drvtype
         self.flash = dict(self.values)
         self.closed = False
         self.received: list[str] = []      # historia komend - przydatna w testach
@@ -98,6 +100,10 @@ class SimulatedOpenFFBoard:
     def close(self) -> None:
         self.closed = True
 
+    @property
+    def xdrive_active(self) -> bool:
+        return self.with_xdrive and self.values.get("axis.0.drvtype") == XDRIVE_DRVTYPE
+
     # --- firmware --------------------------------------------------------------------
 
     def _check_open(self) -> None:
@@ -115,6 +121,8 @@ class SimulatedOpenFFBoard:
         cls, inst, cmd, kind, val = parsed
         key = f"{cls}.{inst}.{cmd}"
         echo = f"{key}?" if kind == "get" else f"{key}={val}" if kind == "set" else f"{key}!"
+        if cls == "xdrive" and not self.xdrive_active:
+            return  # klasa sterownika nie istnieje, gdy wybrany jest inny driver
 
         if kind == "get" and key in self.values:
             self._reply(f"[{echo}|{self.values[key]}]\n")
@@ -129,7 +137,7 @@ class SimulatedOpenFFBoard:
             self._reply(f"[{echo}|{pos if cmd == 'curpos' else torque}]\n")
         elif cls == "sys":
             self._system(cmd, echo)
-        elif key in ("xdrive.0.cal", "xdrive.0.test") and self.with_xdrive:
+        elif key in ("xdrive.0.cal", "xdrive.0.test"):
             self._motion = (cmd, time.monotonic())
             self._reply(f"[{echo}|OK]\n")
         elif key == "axis.0.zeroenc":
@@ -147,7 +155,7 @@ class SimulatedOpenFFBoard:
         elif cmd == "lsactive":
             lines = ["System:sys:0:0:0", "FFB Wheel (1 Axis):main:0:1:0", "Axis:axis:0:2561:0",
                      "Effects:fx:0:2562:0", "Effects manager:fxm:0:2563:0"]
-            if self.with_xdrive:
+            if self.xdrive_active:
                 lines.append("MKS XDrive FOC:xdrive:0:2401:0")
             self._reply(f"[{echo}|" + "\n".join(lines) + "]\n")
         elif cmd == "save":

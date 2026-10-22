@@ -174,6 +174,8 @@ class Backend(QObject):
             self.toast.emit(message, kind)
         elif ev.kind == "error":
             self.toast.emit(str(ev.data), "error")
+        elif ev.kind == "info":
+            self.toast.emit(str(ev.data), "success")
 
     # --- firmware i opis ustawień ---------------------------------------------------
 

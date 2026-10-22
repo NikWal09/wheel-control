@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover - zostaje tylko symulacja
     serial = None
     list_ports = None
 
+XDRIVE_DRVTYPE = 13  # numer MotorXDrive w MotorDriver::all_drivers
 POLL_INTERVAL = 0.015
 LIVE_INTERVAL = 1.0  # odczyty diagnostyczne (napięcie, stan sterownika)
 QUERY_TIMEOUT = 0.6
@@ -68,6 +69,9 @@ SECTIONS = (
                           "małych siłach (axis.expo)."),
     )),
     Section("base", "Oś", "Kierunek i ograniczenia ruchu", "power", (
+        Field("axis.0.drvtype", "Sterownik silnika", 0, 63, kind="choice",
+              options=(("MKS XDrive (FOC)", XDRIVE_DRVTYPE), ("Brak", 0)),
+              description="Na płytce MKS XDrive Mini aplikacja ustawia go sama (axis.drvtype)."),
         Field("axis.0.invert", "Odwróć oś", 0, 1, kind="toggle",
               description="Odwraca kierunek osi i sił (axis.invert)."),
         Field("axis.0.maxspeed", "Limit prędkości", 0, 65535, unit="°/s", step=50, slider_max=3000,
@@ -302,6 +306,8 @@ class OpenFFBoardLink(BaseLink):
         if "sys.0.swver" not in sysinfo:
             raise OSError(f"{self._port_name}: brak odpowiedzi OpenFFBoard")
         active = p.parse_lsactive(sysinfo.get("sys.0.lsactive", ""))
+        if "xdrive" in sysinfo.get("sys.0.hwtype", "").lower() and "xdrive.0" not in active:
+            active = self._select_xdrive(dev) or active
         settings = self._read_settings(dev)
         main = p.Reply("", sysinfo.get("sys.0.main", "")).int_value()
         simulated = self.simulate or self._port_factory is not None
@@ -317,6 +323,32 @@ class OpenFFBoardLink(BaseLink):
                 ("Połączenie", "Symulacja" if simulated else f"USB CDC ({self._port_name})"),
             ])
         return info, settings
+
+    def _select_xdrive(self, dev) -> set[str] | None:
+        """Płytka MKS XDrive bez wybranego sterownika: ustaw MotorXDrive i zapisz we flash.
+
+        Tak, żeby kierownica działała bez otwierania OpenFFBoard Configuratora.
+        """
+        current = p.Reply("", self._query(dev, ["axis.0.drvtype"]).get("axis.0.drvtype", "")).int_value()
+        if current == XDRIVE_DRVTYPE:
+            return None
+        log.info("Wybieram sterownik MotorXDrive (było axis.0.drvtype=%s)", current)
+        self._send(dev, [p.set_("axis.0.drvtype", XDRIVE_DRVTYPE)])
+        self._pump(dev, 0.5)
+        done: dict[str, str] = {}
+        self._awaiting = ({"sys.0.save"}, done)
+        try:
+            self._send(dev, [p.get("sys.0.save")])
+            self._pump(dev, 1.5, until=lambda: "sys.0.save" in done)
+        finally:
+            self._awaiting = None
+        lsactive = self._query(dev, ["sys.0.lsactive"], 1.0).get("sys.0.lsactive", "")
+        active = p.parse_lsactive(lsactive)
+        if "xdrive.0" in active:
+            self.events.put(Event("info", "Ustawiono sterownik silnika MKS XDrive i zapisano w płytce"))
+        else:
+            self.events.put(Event("error", "Nie udało się włączyć sterownika MKS XDrive (axis.drvtype)"))
+        return active
 
     def _read_settings(self, dev) -> dict[str, int]:
         answers = self._query(dev, list(self._fields))
