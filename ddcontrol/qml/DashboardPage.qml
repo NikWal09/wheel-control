@@ -6,6 +6,7 @@ PageBase {
     id: page
 
     NoBaseBanner {}
+    MotorStatusBanners {}
 
     GridLayout {
         Layout.fillWidth: true

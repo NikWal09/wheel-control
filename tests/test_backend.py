@@ -137,3 +137,12 @@ def test_center_wheel(app, offb_backend):
 
 def test_ffbeast_has_no_center_command(app, backend):
     assert backend.firmwareId == "ffbeast" and not backend.canCenter
+
+
+def test_calibration_banner_flag(app, offb_backend):
+    sim = offb_backend._active._sim
+    assert not offb_backend.needsCalibration and not offb_backend.needsXdrive
+    sim.values["xdrive.0.errors"] = 512  # firmware: brak kalibracji
+    assert spin(app, lambda: offb_backend.needsCalibration, timeout=3)
+    offb_backend.sendConsole("xdrive.0.errors?")
+    assert spin(app, lambda: any("512" in line for line in offb_backend.consoleLog), timeout=3)

@@ -127,7 +127,7 @@ def test_external_change_is_picked_up(sim_link):
 
 
 def test_firmware_without_xdrive_class():
-    sim = SimulatedOpenFFBoard(with_xdrive=False)
+    sim = SimulatedOpenFFBoard(with_xdrive=False, drvtype=0)  # stary firmware bez MotorXDrive
     link = OpenFFBoardLink(port_factory=lambda: sim)
     link.start()
     try:
@@ -136,6 +136,8 @@ def test_firmware_without_xdrive_class():
         info = next(e.data for e in events if e.kind == "connected")
         settings = next(e.data for e in events if e.kind == "settings")
         assert "xdrive.0" not in info.capabilities
+        assert "needs-xdrive" in info.capabilities  # aplikacja pokaże baner z przyciskiem
+        assert any(e.kind == "error" and "nie zawiera" in e.data for e in events)
         assert not any(k.startswith("xdrive.") for k in settings)  # brak odpowiedzi = brak pola
         assert "axis.0.power" in settings
     finally:
@@ -187,3 +189,13 @@ def test_xdrive_driver_is_selected_automatically():
         assert settings["axis.0.drvtype"] == 13 and "xdrive.0.ilimit" in settings
     finally:
         link.stop()
+
+
+def test_console_command(sim_link):
+    sim, link = sim_link
+    _events(link)
+    link.console("sys.0.swver?; axis.0.drvtype!")
+    out = []
+    assert _wait(lambda: out.extend(e.data[1] for e in _events(link) if e.kind == "console") or out, timeout=3)
+    text = chr(10).join(out[0])
+    assert "1.17.1" in text and "MKS XDrive" in text

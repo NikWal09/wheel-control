@@ -124,6 +124,11 @@ class SimulatedOpenFFBoard:
         if cls == "xdrive" and not self.xdrive_active:
             return  # klasa sterownika nie istnieje, gdy wybrany jest inny driver
 
+        if kind == "info" and key == "axis.0.drvtype":
+            # format ClassChooser::replyAvailableClasses: "id:creatable:nazwa"
+            classes = ["0:1:None"] + (["13:1:MKS XDrive (FOC)"] if self.with_xdrive else [])
+            self._reply(f"[{echo}|" + "\n".join(classes) + "]\n")
+            return
         if kind == "get" and key in self.values:
             self._reply(f"[{echo}|{self.values[key]}]\n")
         elif kind == "set" and key in self.values:

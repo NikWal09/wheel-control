@@ -72,6 +72,10 @@ PageBase {
         }
     }
 
+    ConsoleCard {
+        Layout.fillWidth: true
+    }
+
     Card {
         Layout.fillWidth: true
         title: "O aplikacji"

@@ -43,6 +43,7 @@ class Backend(QObject):
     profilesChanged = Signal()
     profileStatusChanged = Signal()  # aktywny profil / czy zmodyfikowany
     appearanceChanged = Signal()
+    consoleChanged = Signal()
     toast = Signal(str, str, arguments=["message", "kind"])  # kind: info|success|error
 
     def __init__(self, store: Store | None = None, simulate: bool | None = None,
@@ -60,6 +61,7 @@ class Backend(QObject):
         self._torque = 0.0
         self._peak_torque = 0.0
         self._started = False
+        self._console: list[str] = []
 
         self._real_joys = JoystickReader()
         self._sim_joys = SimulatedJoysticks()
@@ -176,6 +178,9 @@ class Backend(QObject):
             self.toast.emit(str(ev.data), "error")
         elif ev.kind == "info":
             self.toast.emit(str(ev.data), "success")
+        elif ev.kind == "console":
+            text, out = ev.data
+            self._append_console([f"> {text}", *out])
 
     # --- firmware i opis ustawień ---------------------------------------------------
 
@@ -273,6 +278,44 @@ class Backend(QObject):
         self._restart_links()
         self._enumerate_joysticks()
         self.baseChanged.emit()
+
+    @Property(bool, notify=baseChanged)
+    def needsXdrive(self) -> bool:
+        """Płytka MKS XDrive, ale sterownik silnika w firmware nie jest aktywny."""
+        return bool(self._info and "needs-xdrive" in self._info.capabilities)
+
+    @Property(bool, notify=settingsChanged)
+    def needsCalibration(self) -> bool:
+        return bool(self._settings.get("xdrive.0.errors", 0) & 512)
+
+    # --- konsola komend (OpenFFBoard) -------------------------------------------
+
+    @Property(bool, notify=baseChanged)
+    def canConsole(self) -> bool:
+        return self._active is not None and hasattr(self._active, "console")
+
+    @Property("QVariantList", notify=consoleChanged)
+    def consoleLog(self) -> list:
+        return list(self._console)
+
+    def _append_console(self, lines: list[str]) -> None:
+        self._console = (self._console + lines)[-300:]
+        self.consoleChanged.emit()
+
+    @Slot(str)
+    def sendConsole(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if not self.canConsole:
+            self._append_console([f"> {text}", "(brak połączenia z płytką OpenFFBoard)"])
+            return
+        self._active.console(text)
+
+    @Slot()
+    def clearConsole(self) -> None:
+        self._console = []
+        self.consoleChanged.emit()
 
     # --- baza: stan na żywo --------------------------------------------------
 

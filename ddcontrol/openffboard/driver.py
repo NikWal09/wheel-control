@@ -129,6 +129,8 @@ SECTIONS = (
 )
 
 ACTIONS = (
+    Action("selectxdrive", "Włącz sterownik XDrive", "base", variant="primary", requires="needs-xdrive",
+           ends_session=True),
     # bez potwierdzenia: nic się nie rusza, a przycisk ma być pod ręką na pulpicie
     Action("zero", "Wycentruj", "center"),
     Action("calibrate", "Kalibracja silnika", "diag", requires="xdrive.0",
@@ -222,6 +224,8 @@ class OpenFFBoardLink(BaseLink):
         self._torque: int | None = None
         self._last_poll = 0.0
         self._last_live = 0.0
+        self._console: list[str] = []
+        self._capture: list[p.Reply] | None = None
         self._live_keys = [k for k, f in self._fields.items() if f.live]
         self._port_name = ""
 
@@ -276,7 +280,30 @@ class OpenFFBoardLink(BaseLink):
 
     _awaiting: tuple[set[str], dict[str, str]] | None = None
 
+    def console(self, text: str) -> None:
+        """Komendy wpisane w konsoli aplikacji (wątek GUI)."""
+        with self._shared.lock:
+            self._console.append(text)
+
+    def _run_console(self, dev) -> None:
+        with self._shared.lock:
+            lines, self._console = self._console, []
+        for text in lines:
+            cmds = [c.strip() for c in text.replace("\n", ";").split(";") if c.strip()]
+            if not cmds:
+                continue
+            self._capture = []
+            try:
+                self._send(dev, cmds)
+                self._pump(dev, 0.6, until=lambda: len(self._capture) >= len(cmds))
+                out = [f"{r.command} → {r.value}" for r in self._capture] or ["(brak odpowiedzi)"]
+            finally:
+                self._capture = None
+            self.events.put(Event("console", (text, out)))
+
     def _handle(self, reply: p.Reply) -> None:
+        if self._capture is not None:
+            self._capture.append(reply)
         key = reply.key
         if reply.is_set:
             if not reply.ok:
@@ -306,9 +333,12 @@ class OpenFFBoardLink(BaseLink):
         if "sys.0.swver" not in sysinfo:
             raise OSError(f"{self._port_name}: brak odpowiedzi OpenFFBoard")
         active = p.parse_lsactive(sysinfo.get("sys.0.lsactive", ""))
-        if "xdrive" in sysinfo.get("sys.0.hwtype", "").lower() and "xdrive.0" not in active:
+        is_xdrive_board = "xdrive" in sysinfo.get("sys.0.hwtype", "").lower()
+        if is_xdrive_board and "xdrive.0" not in active:
             active = self._select_xdrive(dev) or active
         settings = self._read_settings(dev)
+        if is_xdrive_board and "xdrive.0" not in active:
+            active = set(active) | {"needs-xdrive"}  # baner + przycisk "Włącz sterownik XDrive"
         main = p.Reply("", sysinfo.get("sys.0.main", "")).int_value()
         simulated = self.simulate or self._port_factory is not None
         info = DeviceInfo(
@@ -319,35 +349,49 @@ class OpenFFBoardLink(BaseLink):
                 ("Płytka", sysinfo.get("sys.0.hwtype", "–")),
                 ("Firmware", f"OpenFFBoard {sysinfo['sys.0.swver']}"),
                 ("Tryb (main)", _MAIN_CLASSES.get(main, str(main))),
-                ("Sterownik silnika", "MotorXDrive" if "xdrive.0" in active else "brak klasy xdrive"),
+                ("Sterownik silnika", "MotorXDrive" if "xdrive.0" in active
+                 else f"nieaktywny (axis.drvtype = {settings.get('axis.0.drvtype', '?')})"),
                 ("Połączenie", "Symulacja" if simulated else f"USB CDC ({self._port_name})"),
             ])
         return info, settings
 
-    def _select_xdrive(self, dev) -> set[str] | None:
-        """Płytka MKS XDrive bez wybranego sterownika: ustaw MotorXDrive i zapisz we flash.
-
-        Tak, żeby kierownica działała bez otwierania OpenFFBoard Configuratora.
-        """
-        current = p.Reply("", self._query(dev, ["axis.0.drvtype"]).get("axis.0.drvtype", "")).int_value()
-        if current == XDRIVE_DRVTYPE:
-            return None
-        log.info("Wybieram sterownik MotorXDrive (było axis.0.drvtype=%s)", current)
-        self._send(dev, [p.set_("axis.0.drvtype", XDRIVE_DRVTYPE)])
-        self._pump(dev, 0.5)
+    def _query_raw(self, dev, command: str, key: str, timeout: float = 1.0) -> str | None:
+        """Jedna komenda (np. info "!") i odpowiedź dla podanego klucza."""
         done: dict[str, str] = {}
-        self._awaiting = ({"sys.0.save"}, done)
+        self._awaiting = ({key}, done)
         try:
-            self._send(dev, [p.get("sys.0.save")])
-            self._pump(dev, 1.5, until=lambda: "sys.0.save" in done)
+            self._send(dev, [command])
+            self._pump(dev, timeout, until=lambda: key in done)
         finally:
             self._awaiting = None
+        return done.get(key)
+
+    def _select_xdrive(self, dev, force: bool = False) -> set[str] | None:
+        """Płytka MKS XDrive bez aktywnego sterownika: ustaw MotorXDrive i zapisz we flash.
+
+        Tak, żeby kierownica działała bez otwierania OpenFFBoard Configuratora.
+        Gdy się nie uda, zdarzenie "error" mówi dlaczego.
+        """
+        current = p.Reply("", self._query(dev, ["axis.0.drvtype"]).get("axis.0.drvtype", "")).int_value()
+        if current == XDRIVE_DRVTYPE and not force:
+            return None
+        available = self._query_raw(dev, "axis.0.drvtype!", "axis.0.drvtype") or ""
+        log.info("axis.0.drvtype=%s, dostępne sterowniki: %r", current, available)
+        if not any(line.split(":")[0].strip() == str(XDRIVE_DRVTYPE) for line in available.splitlines()):
+            self.events.put(Event("error", "Ten firmware nie zawiera sterownika MKS XDrive – wgraj aktualny "
+                                           "OpenFFBoard_F405RG_XDRIVE.hex"))
+            return None
+        self._send(dev, [p.set_("axis.0.drvtype", XDRIVE_DRVTYPE)])
+        self._pump(dev, 0.8)  # firmware tworzy sterownik i jego wątek
+        after = p.Reply("", self._query(dev, ["axis.0.drvtype"]).get("axis.0.drvtype", "")).int_value()
+        self._query_raw(dev, p.get("sys.0.save"), "sys.0.save", 2.0)
         lsactive = self._query(dev, ["sys.0.lsactive"], 1.0).get("sys.0.lsactive", "")
         active = p.parse_lsactive(lsactive)
         if "xdrive.0" in active:
             self.events.put(Event("info", "Ustawiono sterownik silnika MKS XDrive i zapisano w płytce"))
         else:
-            self.events.put(Event("error", "Nie udało się włączyć sterownika MKS XDrive (axis.drvtype)"))
+            self.events.put(Event("error", f"Nie udało się włączyć sterownika MKS XDrive: axis.drvtype było "
+                                           f"{current}, po zmianie {after}. Klasy: {', '.join(sorted(active)) or '–'}"))
         return active
 
     def _read_settings(self, dev) -> dict[str, int]:
@@ -362,6 +406,8 @@ class OpenFFBoardLink(BaseLink):
         return dict(settings)
 
     def _poll(self, dev) -> LiveState | None:
+        if self._console:
+            self._run_console(dev)
         now = time.monotonic()
         if now - self._last_live >= LIVE_INTERVAL:
             self._last_live = now
@@ -385,6 +431,9 @@ class OpenFFBoardLink(BaseLink):
             self._power = max(1, values["axis.0.power"])
 
     def _do_action(self, dev, action_id: str) -> None:
+        if action_id == "selectxdrive":
+            self._select_xdrive(dev, force=True)
+            return  # ends_session: ponowne połączenie wczyta sekcje sterownika
         cmd = _ACTION_COMMANDS[action_id]
         self._send(dev, [p.get(cmd)])
         if action_id == "save":  # zapis do flash chwilę trwa - poczekaj na potwierdzenie
