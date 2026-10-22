@@ -44,8 +44,7 @@ SECTIONS = (
               description="Maksymalny moment silnika – 100% to pełna skala sterownika (axis.power). "
                           "Zaczynaj od niskich wartości."),
         _gain("axis.0.fxratio", "Udział efektów z gry",
-              "Część mocy dostępna dla efektów z gry; reszta zostaje jako zapas dla blokady "
-              "(axis.fxratio, domyślnie 80%)."),
+              "Część mocy dostępna dla efektów z gry (axis.fxratio, domyślnie 80%)."),
     )),
     Section("ffb", "Efekty z gry", "Wzmocnienie efektów warunkowych wysyłanych przez grę", "wheel", (
         _gain("fx.0.spring", "Sprężyna", "Efekt sprężyny z gry (fx.spring)."),
@@ -63,7 +62,8 @@ SECTIONS = (
     )),
     Section("ffb", "Blokada i krzywa", "Koniec zakresu i charakterystyka siły", "warning", (
         _gain("axis.0.esgain", "Sztywność blokady",
-              "Jak mocno baza zatrzymuje kierownicę na końcu zakresu (axis.esgain)."),
+              "Jak szybko rośnie siła za końcem zakresu (axis.esgain): 50% = pełna siła po ok. 10°, "
+              "100% = po ok. 5°. Siła blokady nie zależy od Mocy – jej maksimum to Limit prądu."),
         Field("axis.0.expo", "Krzywa wykładnicza", -127, 127, unit="", kind="slider",
               description="Korekcja charakterystyki siły: 0 = liniowo, dodatnie = łagodniej przy "
                           "małych siłach (axis.expo)."),
@@ -85,7 +85,8 @@ SECTIONS = (
     Section("base", "Silnik XDrive", "Sterownik FOC MotorXDrive (DRV8301 + MT6701)", "base", (
         Field("xdrive.0.ilimit", "Limit prądu", 500, 30000, unit="mA", step=250, slider_max=20000,
               description="Maksymalny prąd fazowy = maksymalny moment (xdrive.ilimit). Przy pierwszych "
-                          "testach 3000–5000 mA."),
+                          "testach 3000–5000 mA. Blokada kierownicy zawsze używa pełnego limitu – "
+                          "przy 3 A da się ją przełamać ręką, twarda blokada wymaga ok. 10–15 A."),
         Field("xdrive.0.vlimit", "Limit napięcia", 500, 24000, unit="mV", step=100, slider_max=12000,
               description="Maksymalne napięcie na fazach (xdrive.vlimit)."),
         Field("xdrive.0.mode", "Tryb sterowania", 0, 1, kind="choice",
