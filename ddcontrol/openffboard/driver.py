@@ -114,7 +114,8 @@ SECTIONS = (
         Field("xdrive.0.errors", "Błędy (bity)", 0, 1 << 30, kind="readonly", unit="", live=True,
               description="0 = brak. 1 DRV8301, 2 SPI, 4 offset ADC, 8 nadnapięcie, 16 podnapięcie, "
                           "32 hamowanie za długo, 64 brak prądu przy kalibracji, 128 bieguny/CPR, "
-                          "256 rezystancja, 512 brak kalibracji, 1024 nadprąd, 2048 test przerwany."),
+                          "256 rezystancja, 512 brak kalibracji, 1024 nadprąd, 2048 test przerwany, "
+                          "4096 brak przerwań pomiaru prądu."),
         Field("xdrive.0.vbus", "Napięcie zasilania", 0, 1 << 20, kind="readonly", unit="V", scale=0.001,
               live=True),
         Field("xdrive.0.brake", "Rezystor hamujący", 0, 100, kind="readonly", live=True),
