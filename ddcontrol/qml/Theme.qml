@@ -78,7 +78,8 @@ QtObject {
             return value ? "Wł." : "Wył."
         const scaled = value * field.scale
         // przeskalowane wartości (np. mV -> V) z jednym miejscem po przecinku
-        const shown = field.scale < 1 && Math.abs(scaled) < 1000 && field.unit !== "%" ? scaled.toFixed(1)
+        const shown = field.decimals ? scaled.toFixed(field.decimals)
+                    : field.scale < 1 && Math.abs(scaled) < 1000 && field.unit !== "%" ? scaled.toFixed(1)
                     : Math.round(scaled)
         return field.unit === "%" || field.unit === "°" ? shown + field.unit
              : (shown + " " + field.unit).trim()

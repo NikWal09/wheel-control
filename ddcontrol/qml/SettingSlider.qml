@@ -12,6 +12,7 @@ ColumnLayout {
     readonly property string description: field.description || ""
     readonly property string unit: field.unit !== undefined ? field.unit : "%"
     readonly property real scale: field.scale || 1
+    readonly property int decimals: field.decimals || 0
     readonly property real from: field.sliderMin !== undefined ? field.sliderMin : 0
     readonly property real to: field.sliderMax !== undefined ? field.sliderMax : 100
     readonly property real stepSize: field.step || 1
@@ -34,7 +35,8 @@ ColumnLayout {
             elide: Text.ElideRight
         }
         Text {
-            text: root.live ? Math.round(slider.value * root.scale) : "–"
+            text: root.live ? (root.decimals ? (slider.value * root.scale).toFixed(root.decimals)
+                                             : Math.round(slider.value * root.scale)) : "–"
             font.family: Theme.fontDisplay
             font.pixelSize: root.compact ? 20 : 24
             font.weight: Font.DemiBold

@@ -199,3 +199,46 @@ def test_console_command(sim_link):
     assert _wait(lambda: out.extend(e.data[1] for e in _events(link) if e.kind == "console") or out, timeout=3)
     text = chr(10).join(out[0])
     assert "1.17.1" in text and "MKS XDrive" in text
+
+
+def test_restore_openffboard_defaults(sim_link):
+    sim, link = sim_link
+    sim.values.update({"fx.0.spring": 200, "fx.0.damper_f": 120, "fx.0.filterProfile_id": 1,
+                       "axis.0.esgain": 255, "axis.0.power": 9000, "axis.0.degrees": 540})
+    link.run_action("defaults")
+    assert _wait(lambda: sim.values["fx.0.spring"] == 64 and sim.values["fx.0.filterProfile_id"] == 0)
+    assert sim.values["fx.0.damper_f"] == 30 and sim.values["axis.0.esgain"] == 127
+    assert sim.values["axis.0.power"] == 9000 and sim.values["axis.0.degrees"] == 540  # ustawienia bazy zostają
+
+
+def test_defaults_match_firmware_source():
+    """OPENFFBOARD_DEFAULTS = wartości początkowe w kodzie OpenFFBoard."""
+    import pathlib, re
+    from ddcontrol.openffboard.driver import OPENFFBOARD_DEFAULTS as d
+    inc = pathlib.Path(__file__).resolve().parents[2] / "OpenFFBoard-XDrive/Firmware/FFBoard/Inc"
+    if not inc.exists():
+        pytest.skip("brak repozytorium firmware obok aplikacji")
+    fx = (inc / "EffectsCalculator.h").read_text(encoding="utf-8")
+    axis = (inc / "Axis.h").read_text(encoding="utf-8")
+
+    def num(text, pattern):
+        return int(re.search(pattern, text).group(1))
+
+    for name in ("friction", "spring", "damper", "inertia"):
+        assert d[f"fx.0.{name}"] == num(fx, rf"uint8_t {name} = (\d+);"), name
+    for name, key in (("constant", "filterCf"), ("friction", "friction_"), ("damper", "damper_"),
+                      ("inertia", "inertia_")):
+        m = re.search(rf"biquad_constant_t {name}\s*=\s*\{{\s*(\d+),\s*(\d+)\s*\}}", fx)
+        f, q = int(m.group(1)), int(m.group(2))
+        if name == "constant":
+            assert (d["fx.0.filterCfFreq"], d["fx.0.filterCfQ"]) == (f, q)
+        else:
+            assert (d[f"fx.0.{key}f"], d[f"fx.0.{key}q"]) == (f, q), name
+    assert d["fx.0.frictionPctSpeedToRampup"] == num(fx, r"frictionPctSpeedToRampup = (\d+);")
+    assert d["axis.0.fxratio"] == num(axis, r"fx_ratio_i = (\d+);")
+    assert d["axis.0.esgain"] == num(axis, r"endstopStrength = (\d+);")
+    assert d["axis.0.idlespring"] == num(axis, r"idlespringstrength = (\d+);")
+    assert d["axis.0.axisdamper"] == num(axis, r"damperIntensity = (\d+);")
+    assert d["axis.0.axisfriction"] == num(axis, r"frictionIntensity = (\d+);")
+    assert d["axis.0.axisinertia"] == num(axis, r"inertiaIntensity = (\d+);")
+    assert d["axis.0.filterProfile_id"] == num(axis, r"filterProfileId = (\d+);")

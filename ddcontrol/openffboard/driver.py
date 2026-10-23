@@ -35,6 +35,46 @@ def _gain(key: str, label: str, description: str = "") -> Field:
     return Field(key, label, 0, 255, scale=G, description=description)
 
 
+def _freq(key: str, label: str, description: str, slider_max: int = 200) -> Field:
+    return Field(key, label, 1, 500, unit="Hz", slider_max=slider_max, description=description)
+
+
+def _q(key: str, label: str, description: str = "") -> Field:
+    # firmware trzyma Q * 100 (0..127)
+    return Field(key, label, 1, 127, unit="", scale=0.01, decimals=2, description=description)
+
+
+# Wartości domyślne OpenFFBoard (EffectsCalculator.h, Axis.h) - jak po "Restore Default" w Configuratorze.
+# Nie obejmują ustawień konkretnej bazy: moc, kąt obrotu, kierunek, silnik.
+OPENFFBOARD_DEFAULTS = {
+    "axis.0.fxratio": 204,
+    "fx.0.spring": 64,
+    "fx.0.damper": 64,
+    "fx.0.friction": 254,
+    "fx.0.inertia": 127,
+    "axis.0.idlespring": 127,
+    "axis.0.axisdamper": 30,
+    "axis.0.axisfriction": 0,
+    "axis.0.axisinertia": 0,
+    "axis.0.esgain": 127,
+    "axis.0.expo": 0,
+    "axis.0.maxspeed": 0,
+    "axis.0.maxtorquerate": 0,
+    "axis.0.filterProfile_id": 1,
+    "fx.0.filterCfFreq": 500,
+    "fx.0.filterCfQ": 70,
+    "fx.0.frictionPctSpeedToRampup": 25,
+    # własny profil filtrów ustawiony na wartości domyślnego, potem powrót do domyślnego
+    "fx.0.damper_f": 30,
+    "fx.0.damper_q": 40,
+    "fx.0.friction_f": 50,
+    "fx.0.friction_q": 20,
+    "fx.0.inertia_f": 15,
+    "fx.0.inertia_q": 20,
+    "fx.0.filterProfile_id": 0,
+}
+
+
 SECTIONS = (
     Section("ffb", "Ogólne", "Najważniejsze parametry", "ffb", (
         Field("axis.0.degrees", "Kąt obrotu", 1, 0x7FFF, unit="°", step=10, slider_min=180,
@@ -67,6 +107,29 @@ SECTIONS = (
         Field("axis.0.expo", "Krzywa wykładnicza", -127, 127, unit="", kind="slider",
               description="Korekcja charakterystyki siły: 0 = liniowo, dodatnie = łagodniej przy "
                           "małych siłach (axis.expo)."),
+    )),
+    Section("ffb", "Zaawansowane strojenie FFB",
+            "Filtry efektów – jak okno Advanced ffb tuning w OpenFFBoard Configuratorze", "diag", (
+        Field("fx.0.filterProfile_id", "Profil filtrów efektów", 0, 1, kind="choice",
+              options=(("Domyślny", 0), ("Własny", 1)),
+              description="Domyślny = filtry OpenFFBoard. Częstotliwości i Q poniżej działają tylko "
+                          "w profilu Własnym (fx.filterProfile_id)."),
+        _freq("fx.0.damper_f", "Tłumienie – częstotliwość", "Filtr efektu tłumienia, domyślnie 30 Hz."),
+        _q("fx.0.damper_q", "Tłumienie – Q", "Domyślnie 0,40."),
+        _freq("fx.0.friction_f", "Tarcie – częstotliwość", "Filtr efektu tarcia, domyślnie 50 Hz."),
+        _q("fx.0.friction_q", "Tarcie – Q", "Domyślnie 0,20."),
+        _freq("fx.0.inertia_f", "Bezwładność – częstotliwość", "Filtr efektu bezwładności, domyślnie 15 Hz."),
+        _q("fx.0.inertia_q", "Bezwładność – Q", "Domyślnie 0,20."),
+        Field("fx.0.frictionPctSpeedToRampup", "Wygładzenie tarcia", 0, 100,
+              description="Zakres prędkości, w którym tarcie łagodnie narasta – „Smooth” w Configuratorze, "
+                          "domyślnie 25% (fx.frictionPctSpeedToRampup)."),
+        _freq("fx.0.filterCfFreq", "Filtr siły stałej – częstotliwość",
+              "Wygładza siłę stałą z gry (główny efekt FFB), domyślnie 500 Hz (fx.filterCfFreq).", 500),
+        _q("fx.0.filterCfQ", "Filtr siły stałej – Q", "Domyślnie 0,70 (fx.filterCfQ)."),
+        Field("axis.0.filterProfile_id", "Filtr prędkości osi", 0, 3, kind="choice",
+              options=(("40 Hz", 0), ("70 Hz (domyślny)", 1), ("120 Hz", 2), ("180 Hz", 3)),
+              description="Filtr prędkości i przyspieszenia, z których liczą się tłumienie, tarcie, "
+                          "bezwładność i blokada (axis.filterProfile_id)."),
     )),
     Section("base", "Oś", "Kierunek i ograniczenia ruchu", "power", (
         Field("axis.0.drvtype", "Sterownik silnika", 0, 63, kind="choice",
@@ -145,6 +208,12 @@ ACTIONS = (
            confirm_text="Kierownica wykona +360° w prawo, 720° w lewo i wróci do zera (xdrive.test). "
                         "Puść kierownicę i upewnij się, że nic nie blokuje obrotu.",
            confirm_label="Start testu"),
+    Action("defaults", "Przywróć domyślne OpenFFBoard", "sync",
+           confirm_title="Przywrócić domyślne ustawienia FFB?",
+           confirm_text="Efekty, filtry, blokada i krzywa wrócą do wartości domyślnych OpenFFBoard. "
+                        "Moc, kąt obrotu, kierunek i ustawienia silnika zostają bez zmian. "
+                        "Potem kliknij Zapisz w bazie.",
+           confirm_label="Przywróć"),
     Action("reboot", "Restart", "power", ends_session=True,
            confirm_title="Zrestartować płytkę?",
            confirm_text="Niezapisane zmiany zostaną utracone (sys.reboot).",
@@ -436,6 +505,14 @@ class OpenFFBoardLink(BaseLink):
         if action_id == "selectxdrive":
             self._select_xdrive(dev, force=True)
             return  # ends_session: ponowne połączenie wczyta sekcje sterownika
+        if action_id == "defaults":
+            # tylko komendy, które ten firmware zna (odpowiedział na nie przy odczycie)
+            values = {k: v for k, v in OPENFFBOARD_DEFAULTS.items() if k in self._settings}
+            self._write_settings(dev, values)
+            self._pump(dev, 0.3)
+            self.events.put(Event("settings", self._read_settings(dev)))
+            self.events.put(Event("info", "Przywrócono domyślne ustawienia OpenFFBoard – kliknij Zapisz w bazie"))
+            return
         cmd = _ACTION_COMMANDS[action_id]
         self._send(dev, [p.get(cmd)])
         if action_id == "save":  # zapis do flash chwilę trwa - poczekaj na potwierdzenie

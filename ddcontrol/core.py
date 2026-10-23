@@ -43,6 +43,7 @@ class Field:
     options: tuple[tuple[str, int], ...] = ()   # dla kind == "choice"
     signed_direction: bool = False              # wartość tylko -1 albo +1
     live: bool = False                          # odczyt odświeżany cyklicznie (np. napięcie)
+    decimals: int = 0                           # miejsca po przecinku wartości wyświetlanej
 
     def clamp(self, value) -> int:
         value = int(round(float(value)))
@@ -57,14 +58,14 @@ class Field:
             return next((lbl for lbl, v in self.options if v == value), str(value))
         if self.kind == "toggle":
             return "Wł." if value else "Wył."
-        shown = round(value * self.scale)
+        shown = f"{value * self.scale:.{self.decimals}f}" if self.decimals else round(value * self.scale)
         return f"{shown}{self.unit}" if self.unit in ("%", "°") else f"{shown} {self.unit}".strip()
 
     def to_qml(self) -> dict:
         return {
             "key": self.key, "label": self.label, "kind": self.kind, "unit": self.unit,
             "description": self.description, "min": self.minimum, "max": self.maximum,
-            "step": self.step, "scale": self.scale,
+            "step": self.step, "scale": self.scale, "decimals": self.decimals,
             "sliderMin": self.minimum if self.slider_min is None else self.slider_min,
             "sliderMax": self.maximum if self.slider_max is None else self.slider_max,
             "presets": list(self.presets),
