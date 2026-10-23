@@ -18,7 +18,7 @@ PageBase {
         Card {
             Layout.columnSpan: 2
             Layout.fillWidth: true
-            Layout.preferredHeight: 520
+            Layout.preferredHeight: 600
             title: "Kierownica"
             fillBody: true
             subtitle: backend.baseConnected ? "Pozycja i moment z bazy w czasie rzeczywistym" : "Czekam na bazę…"
@@ -50,7 +50,7 @@ PageBase {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 // średnica łuku: zmieści się nad odczytem kąta i paskiem momentu
-                readonly property real dial: Math.max(160, Math.min(width * 0.62, height - 96))
+                readonly property real dial: Math.max(160, Math.min(width * 0.8, height - 96))
 
                 // łuk zakresu obrotu
                 Canvas {
@@ -88,7 +88,7 @@ PageBase {
                 WheelGraphic {
                     id: wheel
                     anchors.centerIn: arc
-                    width: stage.dial * 1.04  // sam obraz kierownicy ~ średnica łuku, łopatki wystają
+                    width: (stage.dial / 2 - 18) / boundRatio  // przy każdym kącie zostaje w środku łuku
                     height: width / aspect
                     wheelRotation: backend.angle
                     pressedMask: backend.buttons
@@ -162,7 +162,7 @@ PageBase {
         // ---------- pedały ----------
         Card {
             Layout.fillWidth: true
-            Layout.preferredHeight: 520
+            Layout.preferredHeight: 600
             title: "Pedały"
             fillBody: true
             subtitle: backend.pedalsConnected ? backend.pedalsName : "Niepodłączone"

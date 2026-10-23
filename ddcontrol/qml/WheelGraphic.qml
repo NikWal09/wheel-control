@@ -19,6 +19,8 @@ Item {
     readonly property real canvasWidth: 620
     readonly property real canvasHeight: 315
     readonly property real aspect: canvasWidth / canvasHeight
+    // najdalszy punkt (narożnik łopatki) od środka / szerokość - obrócona kierownica mieści się w kole o tym promieniu
+    readonly property real boundRatio: 0.515
     readonly property real imageX: 24   // obraz kierownicy jest węższy o miejsce na łopatki
     // środki otworów Ø12 mm z modelu: lewa kolumna od góry (sloty 0-5), prawa od góry (6-11)
     readonly property var slotPositions: [[89, 33], [138, 46], [164, 89], [174, 153], [171, 215], [167, 265],
