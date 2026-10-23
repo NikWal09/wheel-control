@@ -202,14 +202,20 @@ def test_openffboard_clipping_detection():
     assert not state(0x7FFF + 500, 10000).clipping         # w blokadzie to nie clipping gry
 
 
-def test_old_button_map_is_migrated_to_u_order(app, tmp_path):
-    """Wersja 1 numerowała prawą kolumnę od góry - przypisania mają zostać na tych samych miejscach."""
+def test_button_map_from_u_order_version_is_restored(app, tmp_path):
+    """Wersja 2 miała prawą kolumnę od dołu - po powrocie do układu z wersji 1 przypisania zostają na miejscu."""
     store = Store(tmp_path)
-    old = list(range(20, 34))  # sloty 0-13 -> przyciski 21-34
-    store.set("wheelButtonMap", old)
-    b = Backend(store, simulate=True, links=[])
-    m = b.wheelButtonMap
-    assert m[:6] == old[:6] and m[12:] == old[12:]
-    assert m[6:12] == old[6:12][::-1]       # prawa strona: teraz od dołu (7) do góry (12)
-    Backend(store, simulate=True, links=[])  # drugie uruchomienie nie odwraca ponownie
+    v2 = list(range(20, 34))
+    store.set("wheelButtonMap", v2)
+    store.set("wheelButtonMapVersion", 2)
+    m = Backend(store, simulate=True, links=[]).wheelButtonMap
+    assert m[:6] == v2[:6] and m[12:] == v2[12:] and m[6:12] == v2[6:12][::-1]
+    Backend(store, simulate=True, links=[])  # drugie uruchomienie nic nie zmienia
     assert store.get("wheelButtonMap") == m
+
+
+def test_button_map_from_first_version_is_kept(app, tmp_path):
+    store = Store(tmp_path)
+    v1 = list(range(20, 34))
+    store.set("wheelButtonMap", v1)
+    assert Backend(store, simulate=True, links=[]).wheelButtonMap == v1

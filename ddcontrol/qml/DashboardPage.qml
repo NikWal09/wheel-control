@@ -325,7 +325,7 @@ PageBase {
                         border.color: on ? Theme.accent : Theme.border
                         Text {
                             anchors.centerIn: parent
-                            text: index + 1  // pozycja na kierownicy (U: 1-12, łopatki 13 i 14)
+                            text: index < 12 ? (button + 1) : (index === 12 ? "L" : "P")
                             font.family: Theme.fontDisplay
                             font.pixelSize: 15
                             font.weight: Font.DemiBold

@@ -17,9 +17,9 @@ UI_RATE_MS = 16          # ~60 Hz odświeżania podglądu
 ENUMERATE_EVERY_S = 3.0  # jak często szukać nowych kontrolerów
 LEARN_TIMEOUT_S = 8.0
 WHEEL_SLOTS = 14         # 12 przycisków na panelu + 2 łopatki
-# Sloty = pozycje na kierownicy, numerowane w kształcie U: lewa góra (1) w dół, prawa strona od dołu
-# do prawej góry (12), łopatki 13 (lewa) i 14 (prawa). Wersja 1 miała prawą stronę od góry.
-WHEEL_MAP_VERSION = 2
+# Sloty: 0-5 lewa kolumna od góry, 6-11 prawa kolumna od góry, 12-13 łopatki L/P.
+# Wersja 2 (krótko) miała prawą kolumnę od dołu; 3 = układ z wersji 1.
+WHEEL_MAP_VERSION = 3
 PEDALS = ("throttle", "brake")
 CLIP_WINDOW_S = 3.0      # udział clippingu liczony z ostatnich 3 s
 CLIP_HOLD_S = 0.4        # lampka CLIP świeci jeszcze chwilę po ostatnim obcięciu
@@ -555,7 +555,7 @@ class Backend(QObject):
         if self._store.get("wheelButtonMapVersion") == WHEEL_MAP_VERSION:
             return
         saved = self._store.get("wheelButtonMap")
-        if saved:  # prawa kolumna była numerowana od góry - odwróć, żeby przypisania zostały na miejscu
+        if saved and self._store.get("wheelButtonMapVersion") == 2:  # prawa kolumna była od dołu - odwróć
             self._store.set("wheelButtonMap", saved[:6] + saved[6:12][::-1] + saved[12:])
         self._store.set("wheelButtonMapVersion", WHEEL_MAP_VERSION)
 
@@ -626,7 +626,7 @@ class Backend(QObject):
                 mapping[int(target)] = button
                 self._store.set("wheelButtonMap", mapping)
                 self.mappingChanged.emit()
-                self.toast.emit(f"Przycisk kontrolera {button + 1} → pozycja {int(target) + 1}", "success")
+                self.toast.emit(f"Przypisano przycisk {button + 1}", "success")
                 self.cancelLearning()
                 return
         if time.monotonic() - self._learn_started > LEARN_TIMEOUT_S:

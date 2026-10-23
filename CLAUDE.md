@@ -33,8 +33,10 @@ QT_QPA_PLATFORM=offscreen QT_QPA_FONTDIR=C:/Windows/Fonts python -m ddcontrol.ma
   `Theme.qml` – kolory, ikony, `formatField`.
 - `ddcontrol/gamepads.py` – pedały i kierownica przez WinMM; `storage.py` – profile i ustawienia.
 - `WheelGraphic.qml` – rzut kierownicy z modelu STL: `tools/render_wheel.py <base.stl>` generuje
-  `assets/wheel_front.png` i wypisuje środki otworów przycisków (wklejone w `slotPositions`). Pozycje
-  numerowane w kształcie U (1–12, łopatki 13/14), `wheelButtonMap` = pozycja → przycisk HID kontrolera.
+  `assets/wheel_front.png` (karbon, uchwyty, śruby, moduł diod; okna przezroczyste – łopatki są pod
+  obrazem) i wypisuje środki otworów przycisków i diod (wklejone w `slotPositions`/`ledPositions`).
+  Sloty: lewa kolumna od góry, prawa od góry, łopatki L/P; etykieta = numer przycisku kontrolera
+  (`wheelButtonMap`). Numeracja w kształcie U była próbowana i cofnięta na życzenie użytkownika.
   Diody: zasilanie, Bluetooth (mruga = szuka), ładowanie (kontroler nie wysyła stanu).
 
 ## Zasady

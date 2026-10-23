@@ -9,7 +9,7 @@ PageBase {
     Card {
         Layout.fillWidth: true
         title: "Kontroler kierownicy"
-        subtitle: "ESP32-S3 przez Bluetooth LE · przyciski 1–12 (kształt U) + łopatki 13 i 14"
+        subtitle: "ESP32-S3 przez Bluetooth LE · 12 przycisków + 2 łopatki"
         icon: Theme.icWheel
 
         DevicePicker {
@@ -62,11 +62,11 @@ PageBase {
                 spacing: 18
                 Repeater {
                     model: [
-                        { c: Theme.success, name: "Zasilanie",
+                        { c: "#B9F5CB", name: "Zasilanie",
                           state: backend.wheelConnected ? "włączona" : "nieznany (brak połączenia)" },
-                        { c: Theme.info, name: "Bluetooth",
+                        { c: "#3D7BFF", name: "Bluetooth",
                           state: backend.wheelConnected ? "połączona – świeci" : "mruga, gdy szuka połączenia" },
-                        { c: Theme.warning, name: "Ładowanie", state: "brak danych z kontrolera" }
+                        { c: "#E9F2FF", name: "Ładowanie", state: "brak danych z kontrolera" }
                     ]
                     delegate: Row {
                         required property var modelData
@@ -95,7 +95,7 @@ PageBase {
         Card {
             Layout.fillWidth: true
             title: "Wszystkie przyciski"
-            subtitle: "Stan surowy z kontrolera (numery HID, nie pozycje)"
+            subtitle: "Stan surowy z kontrolera"
             icon: Theme.icDiag
 
             GridLayout {
