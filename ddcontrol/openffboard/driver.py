@@ -24,6 +24,8 @@ except ImportError:  # pragma: no cover - zostaje tylko symulacja
     list_ports = None
 
 XDRIVE_DRVTYPE = 13  # numer MotorXDrive w MotorDriver::all_drivers
+XDRIVE_FWREV = 20261023  # xdrive.fwrev firmware, z którym ta wersja aplikacji była sprawdzana
+VLIMIT_FOC_MIN = 8000  # mV - niżej limit napięcia obcina prąd (i siłę blokady) przy ruchu
 POLL_INTERVAL = 0.015
 LIVE_INTERVAL = 1.0  # odczyty diagnostyczne (napięcie, stan sterownika)
 QUERY_TIMEOUT = 0.6
@@ -102,8 +104,8 @@ SECTIONS = (
     )),
     Section("ffb", "Blokada i krzywa", "Koniec zakresu i charakterystyka siły", "warning", (
         _gain("axis.0.esgain", "Sztywność blokady",
-              "Jak szybko rośnie siła za końcem zakresu (axis.esgain): 50% = pełna siła po ok. 10°, "
-              "100% = po ok. 5°. Siła blokady nie zależy od Mocy – jej maksimum to Limit prądu."),
+              "Jak szybko rośnie siła za końcem zakresu (axis.esgain): 50% = pełna siła po ok. 5°, "
+              "100% = po ok. 2,6°. Siła blokady nie zależy od Mocy – jej maksimum to Limit prądu."),
         Field("axis.0.expo", "Krzywa wykładnicza", -127, 127, unit="", kind="slider",
               description="Korekcja charakterystyki siły: 0 = liniowo, dodatnie = łagodniej przy "
                           "małych siłach (axis.expo)."),
@@ -151,7 +153,8 @@ SECTIONS = (
                           "testach 3000–5000 mA. Blokada kierownicy zawsze używa pełnego limitu – "
                           "przy 3 A da się ją przełamać ręką, twarda blokada wymaga ok. 10–15 A."),
         Field("xdrive.0.vlimit", "Limit napięcia", 500, 24000, unit="mV", step=100, slider_max=12000,
-              description="Maksymalne napięcie na fazach (xdrive.vlimit)."),
+              description="Maksymalne napięcie na fazach (xdrive.vlimit). Niskie (np. 4000 mV z pierwszego "
+                          "uruchomienia) ogranicza prąd przy ruchu i osłabia blokadę – po kalibracji ustaw 12000 mV."),
         Field("xdrive.0.mode", "Tryb sterowania", 0, 1, kind="choice",
               options=(("Prądowy (FOC)", 1), ("Napięciowy", 0)),
               description="Prądowy to normalna praca. Napięciowy tylko do diagnostyki – "
@@ -182,6 +185,10 @@ SECTIONS = (
                           "4096 brak przerwań pomiaru prądu."),
         Field("xdrive.0.vbus", "Napięcie zasilania", 0, 1 << 20, kind="readonly", unit="V", scale=0.001,
               live=True),
+        Field("xdrive.0.iq", "Prąd silnika (iq)", -(1 << 20), 1 << 20, kind="readonly", unit="A", scale=0.001,
+              decimals=1, live=True,
+              description="Zmierzony prąd momentu. Gdy przy pchaniu w blokadę dochodzi do Limitu prądu, "
+                          "silnik daje już maksymalną siłę."),
         Field("xdrive.0.brake", "Rezystor hamujący", 0, 100, kind="readonly", live=True),
         Field("xdrive.0.res", "Rezystancja fazy", 0, 65535, kind="readonly", unit="mΩ", scale=0.1),
         Field("xdrive.0.ind", "Indukcyjność fazy", 0, 65535, kind="readonly", unit="µH"),
@@ -410,6 +417,10 @@ class OpenFFBoardLink(BaseLink):
         settings = self._read_settings(dev)
         if is_xdrive_board and "xdrive.0" not in active:
             active = set(active) | {"needs-xdrive"}  # baner + przycisk "Włącz sterownik XDrive"
+        fwrev = None
+        if "xdrive.0" in active:
+            fwrev = p.Reply("", self._query(dev, ["xdrive.0.fwrev"]).get("xdrive.0.fwrev", "")).int_value()
+            self._check_xdrive(fwrev, settings)
         main = p.Reply("", sysinfo.get("sys.0.main", "")).int_value()
         simulated = self.simulate or self._port_factory is not None
         info = DeviceInfo(
@@ -420,11 +431,22 @@ class OpenFFBoardLink(BaseLink):
                 ("Płytka", sysinfo.get("sys.0.hwtype", "–")),
                 ("Firmware", f"OpenFFBoard {sysinfo['sys.0.swver']}"),
                 ("Tryb (main)", _MAIN_CLASSES.get(main, str(main))),
-                ("Sterownik silnika", "MotorXDrive" if "xdrive.0" in active
+                ("Sterownik silnika", f"MotorXDrive (wersja {fwrev or 'sprzed 2026-10-23'})" if "xdrive.0" in active
                  else f"nieaktywny (axis.drvtype = {settings.get('axis.0.drvtype', '?')})"),
                 ("Połączenie", "Symulacja" if simulated else f"USB CDC ({self._port_name})"),
             ])
         return info, settings
+
+    def _check_xdrive(self, fwrev: int | None, settings: dict[str, int]) -> None:
+        """Ostrzeżenia o rzeczach, które osłabiają siłę bazy: stary firmware, za niski limit napięcia."""
+        if fwrev is None or fwrev < XDRIVE_FWREV:
+            self.events.put(Event("error", "Na płytce jest starszy firmware niż ten, z którym działa ta aplikacja "
+                                           "(słabsza blokada kierownicy) – wgraj aktualny "
+                                           "OpenFFBoard_F405RG_XDRIVE.hex przez Tryb DFU"))
+        vlimit = settings.get("xdrive.0.vlimit")
+        if settings.get("xdrive.0.mode") == 1 and vlimit is not None and vlimit < VLIMIT_FOC_MIN:
+            self.events.put(Event("error", f"Limit napięcia {vlimit / 1000:.1f} V ogranicza siłę silnika i blokady – "
+                                           f"ustaw 12000 mV (Baza i silnik → Silnik XDrive) i zapisz w bazie"))
 
     def _query_raw(self, dev, command: str, key: str, timeout: float = 1.0) -> str | None:
         """Jedna komenda (np. info "!") i odpowiedź dla podanego klucza."""

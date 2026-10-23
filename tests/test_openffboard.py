@@ -242,3 +242,24 @@ def test_defaults_match_firmware_source():
     assert d["axis.0.axisfriction"] == num(axis, r"frictionIntensity = (\d+);")
     assert d["axis.0.axisinertia"] == num(axis, r"inertiaIntensity = (\d+);")
     assert d["axis.0.filterProfile_id"] == num(axis, r"filterProfileId = (\d+);")
+
+
+def test_warns_about_old_firmware_and_low_voltage_limit():
+    sim = SimulatedOpenFFBoard()
+    del sim.values["xdrive.0.fwrev"]          # firmware sprzed komendy fwrev
+    sim.values["xdrive.0.vlimit"] = 4000      # zostało z pierwszego uruchomienia
+    link = OpenFFBoardLink(port_factory=_reopening(sim))
+    link.start()
+    try:
+        assert _wait(lambda: link.connected, timeout=5)
+        errors = [e.data for e in _events(link) if e.kind == "error"]
+        assert any("starszy firmware" in e for e in errors)
+        assert any("Limit napięcia 4.0 V" in e for e in errors)
+    finally:
+        link.stop()
+
+
+def test_current_firmware_gives_no_warnings(sim_link):
+    sim, link = sim_link
+    link.request_reload()
+    assert not any(e.kind == "error" for e in _events(link))
