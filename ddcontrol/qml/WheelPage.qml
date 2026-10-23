@@ -9,7 +9,7 @@ PageBase {
     Card {
         Layout.fillWidth: true
         title: "Kontroler kierownicy"
-        subtitle: "ESP32-S3 przez Bluetooth LE · 12 przycisków + 2 łopatki"
+        subtitle: "ESP32-S3 przez Bluetooth LE · przyciski 1–12 (kształt U) + łopatki 13 i 14"
         icon: Theme.icWheel
 
         DevicePicker {
@@ -22,14 +22,13 @@ PageBase {
 
     GridLayout {
         Layout.fillWidth: true
-        columns: page.wide ? 3 : 1
+        columns: 1
         columnSpacing: Theme.gap
         rowSpacing: Theme.gap
 
         Card {
-            Layout.columnSpan: page.wide ? 2 : 1
             Layout.fillWidth: true
-            Layout.preferredHeight: 520
+            Layout.preferredHeight: 620
             title: "Test przycisków"
             fillBody: true
             subtitle: page.learningSlot >= 0 ? "Naciśnij przycisk na kierownicy, który ma trafić w podświetlone miejsce…"
@@ -48,29 +47,60 @@ PageBase {
             WheelGraphic {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.margins: 30
+                Layout.margins: 10
                 interactive: true
                 pressedMask: backend.buttons
                 buttonMap: backend.wheelButtonMap
                 highlightSlot: page.learningSlot
-                ledBase: backend.baseConnected
-                ledWheel: backend.wheelConnected
-                ledPedals: backend.pedalsConnected
+                wheelConnected: backend.wheelConnected
                 onSlotClicked: slot => backend.learnWheelButton(slot)
+            }
+
+            // znaczenie diod na kierownicy
+            Flow {
+                Layout.fillWidth: true
+                spacing: 18
+                Repeater {
+                    model: [
+                        { c: Theme.success, name: "Zasilanie",
+                          state: backend.wheelConnected ? "włączona" : "nieznany (brak połączenia)" },
+                        { c: Theme.info, name: "Bluetooth",
+                          state: backend.wheelConnected ? "połączona – świeci" : "mruga, gdy szuka połączenia" },
+                        { c: Theme.warning, name: "Ładowanie", state: "brak danych z kontrolera" }
+                    ]
+                    delegate: Row {
+                        required property var modelData
+                        spacing: 8
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 10; height: 10; radius: 5
+                            color: modelData.c
+                        }
+                        Text {
+                            text: modelData.name + ": "
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                            color: Theme.text
+                        }
+                        Text {
+                            text: modelData.state
+                            font.pixelSize: 12
+                            color: Theme.textDim
+                        }
+                    }
+                }
             }
         }
 
         Card {
             Layout.fillWidth: true
-            Layout.fillHeight: true
             title: "Wszystkie przyciski"
-            fillBody: true
-            subtitle: "Stan surowy z kontrolera"
+            subtitle: "Stan surowy z kontrolera (numery HID, nie pozycje)"
             icon: Theme.icDiag
 
             GridLayout {
                 Layout.fillWidth: true
-                columns: 4
+                columns: 7
                 columnSpacing: 8
                 rowSpacing: 8
                 Repeater {
@@ -93,8 +123,6 @@ PageBase {
                     }
                 }
             }
-
-            Item { Layout.fillHeight: true }
 
             AppButton {
                 text: "Przywróć domyślne przypisanie"

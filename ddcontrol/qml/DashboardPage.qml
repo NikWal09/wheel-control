@@ -89,13 +89,11 @@ PageBase {
                     id: wheel
                     anchors.centerIn: arc
                     width: stage.dial - 34
-                    height: width * 280 / 440
+                    height: width / aspect
                     wheelRotation: backend.angle
                     pressedMask: backend.buttons
                     buttonMap: backend.wheelButtonMap
-                    ledBase: backend.baseConnected
-                    ledWheel: backend.wheelConnected
-                    ledPedals: backend.pedalsConnected
+                    wheelConnected: backend.wheelConnected
                 }
 
                 Column {
@@ -327,7 +325,7 @@ PageBase {
                         border.color: on ? Theme.accent : Theme.border
                         Text {
                             anchors.centerIn: parent
-                            text: index < 12 ? (button + 1) : (index === 12 ? "L" : "P")
+                            text: index + 1  // pozycja na kierownicy (U: 1-12, łopatki 13 i 14)
                             font.family: Theme.fontDisplay
                             font.pixelSize: 15
                             font.weight: Font.DemiBold

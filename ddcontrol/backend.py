@@ -17,6 +17,9 @@ UI_RATE_MS = 16          # ~60 Hz odświeżania podglądu
 ENUMERATE_EVERY_S = 3.0  # jak często szukać nowych kontrolerów
 LEARN_TIMEOUT_S = 8.0
 WHEEL_SLOTS = 14         # 12 przycisków na panelu + 2 łopatki
+# Sloty = pozycje na kierownicy, numerowane w kształcie U: lewa góra (1) w dół, prawa strona od dołu
+# do prawej góry (12), łopatki 13 (lewa) i 14 (prawa). Wersja 1 miała prawą stronę od góry.
+WHEEL_MAP_VERSION = 2
 PEDALS = ("throttle", "brake")
 CLIP_WINDOW_S = 3.0      # udział clippingu liczony z ostatnich 3 s
 CLIP_HOLD_S = 0.4        # lampka CLIP świeci jeszcze chwilę po ostatnim obcięciu
@@ -56,6 +59,7 @@ class Backend(QObject):
         super().__init__()
         self._store = store or Store()
         self._simulation = bool(self._store.get("simulation", False) if simulate is None else simulate)
+        self._migrate_wheel_map()
 
         self._links: list[BaseLink] = links if links is not None else self._make_links()
         self._active: BaseLink | None = None
@@ -547,6 +551,14 @@ class Backend(QObject):
         self._store.set("pedalMap", m)
         self.mappingChanged.emit()
 
+    def _migrate_wheel_map(self) -> None:
+        if self._store.get("wheelButtonMapVersion") == WHEEL_MAP_VERSION:
+            return
+        saved = self._store.get("wheelButtonMap")
+        if saved:  # prawa kolumna była numerowana od góry - odwróć, żeby przypisania zostały na miejscu
+            self._store.set("wheelButtonMap", saved[:6] + saved[6:12][::-1] + saved[12:])
+        self._store.set("wheelButtonMapVersion", WHEEL_MAP_VERSION)
+
     @Property("QVariantList", notify=mappingChanged)
     def wheelButtonMap(self) -> list:
         saved = self._store.get("wheelButtonMap") or []
@@ -614,7 +626,7 @@ class Backend(QObject):
                 mapping[int(target)] = button
                 self._store.set("wheelButtonMap", mapping)
                 self.mappingChanged.emit()
-                self.toast.emit(f"Przypisano przycisk {button + 1}", "success")
+                self.toast.emit(f"Przycisk kontrolera {button + 1} → pozycja {int(target) + 1}", "success")
                 self.cancelLearning()
                 return
         if time.monotonic() - self._learn_started > LEARN_TIMEOUT_S:
