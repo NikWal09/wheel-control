@@ -28,7 +28,7 @@ PageBase {
 
         Card {
             Layout.fillWidth: true
-            Layout.preferredHeight: 620
+            Layout.preferredHeight: 700
             title: "Test przycisków"
             fillBody: true
             subtitle: page.learningSlot >= 0 ? "Naciśnij przycisk na kierownicy, który ma trafić w podświetlone miejsce…"
@@ -47,7 +47,7 @@ PageBase {
             WheelGraphic {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.margins: 10
+                Layout.margins: 0
                 interactive: true
                 pressedMask: backend.buttons
                 buttonMap: backend.wheelButtonMap

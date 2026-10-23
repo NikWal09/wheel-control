@@ -88,7 +88,7 @@ PageBase {
                 WheelGraphic {
                     id: wheel
                     anchors.centerIn: arc
-                    width: stage.dial - 34
+                    width: stage.dial * 1.04  // sam obraz kierownicy ~ średnica łuku, łopatki wystają
                     height: width / aspect
                     wheelRotation: backend.angle
                     pressedMask: backend.buttons

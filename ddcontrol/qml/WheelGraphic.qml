@@ -1,9 +1,8 @@
 import QtQuick
 import QtQuick.Controls.Basic
-import QtQuick.Shapes
 
 // Kierownica DIY: rzut z modelu STL (assets/wheel_front.png, tools/render_wheel.py) + przyciski w miejscach
-// otworów, łopatki widoczne przez okna, diody w module na dole. Układ 620x315 (2 jednostki = 1 mm).
+// otworów, łopatki wystające po bokach, diody w module na dole. Układ 620x315 (2 jednostki = 1 mm).
 Item {
     id: root
     property real wheelRotation: 0
@@ -43,25 +42,7 @@ Item {
         scale: Math.min(root.width / root.canvasWidth, root.height / root.canvasHeight)
         rotation: root.wheelRotation
 
-        // poświata pod kierownicą - ciemna kierownica nie zlewa się z ciemnym tłem
-        Shape {
-            anchors.fill: parent
-            anchors.margins: -40
-            ShapePath {
-                strokeColor: "transparent"
-                fillGradient: RadialGradient {
-                    centerX: canvas.width / 2 + 40; centerY: canvas.height / 2 + 40
-                    centerRadius: canvas.width * 0.55
-                    focalX: centerX; focalY: centerY
-                    GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0.07) }
-                    GradientStop { position: 0.7; color: Qt.rgba(1, 1, 1, 0.025) }
-                    GradientStop { position: 1; color: "transparent" }
-                }
-                PathRectangle { width: canvas.width + 80; height: canvas.height + 80 }
-            }
-        }
-
-        // łopatki za kierownicą - widać je przez okna na dłonie
+        // łopatki za kierownicą - wystają po bokach
         Repeater {
             model: 2
             delegate: Rectangle {
@@ -70,22 +51,19 @@ Item {
                 readonly property int slot: 12 + index
                 readonly property bool on: root.showButtons && root.isPressed(slot)
                 readonly property bool learning: slot === root.highlightSlot
-                x: (index === 0 ? 102 : root.canvasWidth - 2 * root.imageX - 102) + root.imageX - width / 2
-                y: 50
-                width: 112; height: 220; radius: 40
-                color: on ? Theme.accent : "#2B2F37"
-                border.color: learning ? Theme.text : "#454B56"
-                border.width: learning ? 3 : 1.5
-                Behavior on color { ColorAnimation { duration: 80 } }
+                x: index === 0 ? 0 : root.canvasWidth - width
+                y: root.canvasHeight / 2 - height / 2
+                width: 46; height: 116; radius: 12
+                color: on ? Theme.accent : "#262B33"
+                border.color: learning ? Theme.text : "#3A414C"
+                border.width: learning ? 2 : 1
                 Text {
                     visible: root.showButtons
-                    // w górnym oknie
-                    x: parent.width / 2 - width / 2 + (paddle.index === 0 ? -8 : 8)
-                    y: 46
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: paddle.index === 0 ? 6 : parent.width - width - 6
                     text: paddle.index === 0 ? "L" : "P"
                     font.family: Theme.fontDisplay
-                    font.pixelSize: 22
-                    font.weight: Font.DemiBold
+                    font.pixelSize: 13
                     color: paddle.on ? "#fff" : Theme.textDim
                     rotation: -root.wheelRotation
                 }
@@ -105,14 +83,6 @@ Item {
             source: "../assets/wheel_front.png"
             smooth: true
             mipmap: true
-        }
-
-        // znacznik środka (12:00)
-        Rectangle {
-            x: root.canvasWidth / 2 - 9
-            y: 76
-            width: 18; height: 5; radius: 2.5
-            color: Theme.accent
         }
 
         // diody w module na dole: zasilanie, Bluetooth, ładowanie (kolory jak na kierownicy)
