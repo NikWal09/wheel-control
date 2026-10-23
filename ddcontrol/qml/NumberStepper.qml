@@ -19,7 +19,8 @@ ColumnLayout {
 
     function commit(v) {
         v = Math.max(minimum, Math.min(maximum, Math.round(v)))
-        backend.setSetting(key, v)
+        if (v !== deviceValue)  // np. wyjście z pola bez zmiany - nie wysyłaj (pary biegunów kasują kalibrację)
+            backend.setSetting(key, v)
         input.text = v
         input.focus = false
     }

@@ -60,14 +60,15 @@ DEFAULTS = {
     "xdrive.0.vbus": 19500,
     "xdrive.0.brake": 0,
     "xdrive.0.iq": 0,
-    "xdrive.0.fwrev": 20261023,
+    "xdrive.0.fwrev": 2026102302,
+    "xdrive.0.vsupply": 19500,
     "xdrive.0.res": 2000,
     "xdrive.0.ind": 400,
     "xdrive.0.calratio": 1003,
     "xdrive.0.indexfound": 1,
 }
 XDRIVE_DRVTYPE = 13  # MotorDriver::all_drivers w firmware
-READ_ONLY = {"axis.0.cpr", "xdrive.0.offset", "xdrive.0.iq", "xdrive.0.fwrev", "xdrive.0.state", "xdrive.0.vbus", "xdrive.0.brake",
+READ_ONLY = {"axis.0.cpr", "xdrive.0.offset", "xdrive.0.iq", "xdrive.0.fwrev", "xdrive.0.vsupply", "xdrive.0.state", "xdrive.0.vbus", "xdrive.0.brake",
              "xdrive.0.res", "xdrive.0.ind", "xdrive.0.calratio", "xdrive.0.indexfound"}
 
 

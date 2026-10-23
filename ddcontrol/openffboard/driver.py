@@ -24,7 +24,7 @@ except ImportError:  # pragma: no cover - zostaje tylko symulacja
     list_ports = None
 
 XDRIVE_DRVTYPE = 13  # numer MotorXDrive w MotorDriver::all_drivers
-XDRIVE_FWREV = 20261023  # xdrive.fwrev firmware, z którym ta wersja aplikacji była sprawdzana
+XDRIVE_FWREV = 2026102302  # xdrive.fwrev firmware, z którym ta wersja aplikacji była sprawdzana
 VLIMIT_FOC_MIN = 8000  # mV - niżej limit napięcia obcina prąd (i siłę blokady) przy ruchu
 POLL_INTERVAL = 0.015
 LIVE_INTERVAL = 1.0  # odczyty diagnostyczne (napięcie, stan sterownika)
@@ -180,11 +180,15 @@ SECTIONS = (
                        ("Kalibracja", 4), ("Praca", 5), ("Test", 6), ("Błąd", 7)), live=True),
         Field("xdrive.0.errors", "Błędy (bity)", 0, 1 << 30, kind="readonly", unit="", live=True,
               description="0 = brak. 1 DRV8301, 2 SPI, 4 offset ADC, 8 nadnapięcie, 16 podnapięcie, "
-                          "32 hamowanie za długo, 64 brak prądu przy kalibracji, 128 bieguny/CPR, "
+                          "32 rezystor hamujący włączony > 5 s, 64 brak prądu przy kalibracji, 128 bieguny/CPR, "
                           "256 rezystancja, 512 brak kalibracji, 1024 nadprąd, 2048 test przerwany, "
                           "4096 brak przerwań pomiaru prądu."),
         Field("xdrive.0.vbus", "Napięcie zasilania", 0, 1 << 20, kind="readonly", unit="V", scale=0.001,
               live=True),
+        Field("xdrive.0.vsupply", "Napięcie zasilacza (przy starcie)", 0, 1 << 20, kind="readonly", unit="V",
+              scale=0.001, decimals=1,
+              description="Mierzone po włączeniu zasilacza. Rezystor hamujący włącza się 1,5 V powyżej, "
+                          "błąd nadnapięcia 4 V powyżej (obsługiwane zasilacze 12–30 V)."),
         Field("xdrive.0.iq", "Prąd silnika (iq)", -(1 << 20), 1 << 20, kind="readonly", unit="A", scale=0.001,
               decimals=1, live=True,
               description="Zmierzony prąd momentu. Gdy przy pchaniu w blokadę dochodzi do Limitu prądu, "
