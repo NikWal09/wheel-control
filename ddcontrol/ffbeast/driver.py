@@ -23,6 +23,7 @@ def _f(key: str, label: str, **kw) -> Field:
 
 
 DIRECTION = (("Normalny", 1), ("Odwrócony", -1))
+CLIP_LEVEL = 0.99  # moment >= 99% maksimum = clipping
 
 SECTIONS = (
     Section("ffb", "Ogólne", "Najważniejsze parametry", "ffb", (
@@ -232,7 +233,7 @@ class FFBeastLink(BaseLink):
             return None
         body = bytes(data[1:]) if len(data) > p.REPORT_SIZE else bytes(data)
         state = p.parse_state(body)
-        return LiveState(state.position, state.torque)
+        return LiveState(state.position, state.torque, abs(state.torque) >= CLIP_LEVEL)
 
     def _write_settings(self, dev, values: dict[str, int]) -> None:
         for key, value in values.items():

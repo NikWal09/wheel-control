@@ -204,6 +204,42 @@ PageBase {
             icon: Theme.icChart
 
             actions: [
+                Rectangle {
+                    id: clipLamp
+                    readonly property bool on: backend.clipping
+                    implicitWidth: clipRow.implicitWidth + 20
+                    implicitHeight: 30
+                    radius: 15
+                    color: on ? Theme.danger : Theme.surface2
+                    border.color: on ? Theme.danger : Theme.border
+                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Row {
+                        id: clipRow
+                        anchors.centerIn: parent
+                        spacing: 8
+                        Text {
+                            text: "CLIP"
+                            font.family: Theme.fontDisplay
+                            font.pixelSize: 13
+                            font.weight: Font.Bold
+                            font.letterSpacing: 1
+                            color: clipLamp.on ? Theme.text : Theme.textFaint
+                        }
+                        Text {
+                            text: backend.baseConnected ? Math.round(backend.clipPercent) + "%" : "–"
+                            font.family: Theme.fontDisplay
+                            font.pixelSize: 13
+                            color: clipLamp.on ? Theme.text
+                                 : backend.clipPercent > 5 ? Theme.warning : Theme.textDim
+                        }
+                    }
+                    ToolTip.visible: clipMouse.containsMouse
+                    ToolTip.delay: 300
+                    ToolTip.text: "Gra wysyła więcej siły, niż baza ma ustawione – szczyty są obcięte (procent czasu "
+                                + "z ostatnich 3 s). Jeśli świeci często na zakrętach: zmniejsz siłę FFB w grze; "
+                                + "jeśli nigdy, a siła jest za słaba: zwiększ Moc."
+                    MouseArea { id: clipMouse; anchors.fill: parent; hoverEnabled: true }
+                },
                 Column {
                     Text {
                         anchors.right: parent.right
@@ -245,6 +281,16 @@ PageBase {
                 Layout.fillWidth: true
                 field: backend.strengthField
                 compact: true
+            }
+            Text {
+                visible: backend.forceBudget.available === true
+                text: visible ? "W grze maks. " + backend.forceBudget.gameA.toFixed(1) + " A ≈ "
+                                + backend.forceBudget.gameNm.toFixed(1) + " Nm  ·  blokada "
+                                + backend.forceBudget.endstopNm.toFixed(1) + " Nm" : ""
+                font.pixelSize: 12
+                color: Theme.textDim
+                Layout.fillWidth: true
+                elide: Text.ElideRight
             }
             Segmented {
                 Layout.fillWidth: true

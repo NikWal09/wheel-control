@@ -7,6 +7,10 @@ PageBase {
 
     NoBaseBanner {}
 
+    ForceBudgetCard {
+        Layout.fillWidth: true
+    }
+
     SchemaCards {
         page: "ffb"
         wide: page.wide

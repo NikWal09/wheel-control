@@ -146,3 +146,57 @@ def test_calibration_banner_flag(app, offb_backend):
     assert spin(app, lambda: offb_backend.needsCalibration, timeout=3)
     offb_backend.sendConsole("xdrive.0.errors?")
     assert spin(app, lambda: any("512" in line for line in offb_backend.consoleLog), timeout=3)
+
+
+def test_force_budget_follows_settings_and_kt(app, offb_backend):
+    b = offb_backend
+    assert spin(app, lambda: b.forceBudget.get("available"))
+    b.setSetting("xdrive.0.ilimit", 20000)
+    b.setSetting("axis.0.power", 0x7FFF // 2)
+    b.setSetting("axis.0.fxratio", 255)
+    budget = b.forceBudget
+    assert budget["endstopA"] == pytest.approx(20.0)
+    assert budget["gameA"] == pytest.approx(10.0, abs=0.01)
+    assert budget["gameNm"] == pytest.approx(10.0 * b.motorKt, abs=0.01)
+    b.setMotorKt(0.8)
+    assert b.forceBudget["endstopNm"] == pytest.approx(16.0)
+    assert b._store.get("motorKt") == 0.8  # zapamiętane w ustawieniach aplikacji
+
+
+def test_ffbeast_has_no_force_budget(app, backend):
+    assert backend.forceBudget == {"available": False}
+
+
+def test_clipping_indicator(app, offb_backend):
+    from ddcontrol.core import LiveState
+    b = offb_backend
+    link = b._active
+    link._poll = lambda dev: (time.sleep(0.01), None)[1]  # wątek nie nadpisuje stanu - podajemy go ręcznie
+    link.latest_state = LiveState(0.1, 0.8, clipping=True)
+    b._tick()
+    assert b.clipping and b.clipPercent > 0
+    link.latest_state = LiveState(0.1, 0.2, clipping=False)
+    for _ in range(b._clip_hist.maxlen):
+        b._tick()
+    assert b.clipPercent == 0
+    assert spin(app, lambda: not b.clipping, timeout=1.0)
+
+
+def test_openffboard_clipping_detection():
+    from ddcontrol.openffboard.driver import OpenFFBoardLink
+    link = OpenFFBoardLink(simulate=True)
+    link._settings = {"axis.0.fxratio": 204}
+    link._power = 10000
+
+    class Dev:
+        in_waiting = 0
+        def write(self, data): pass
+
+    def state(pos, torque):
+        link._pos, link._torque = pos, torque
+        link._last_poll = time.monotonic() + 10  # bez nowego zapytania
+        return link._poll(Dev())
+
+    assert state(1000, int(10000 * 0.8)).clipping          # efekty na maksimum (80% mocy)
+    assert not state(1000, int(10000 * 0.5)).clipping
+    assert not state(0x7FFF + 500, 10000).clipping         # w blokadzie to nie clipping gry

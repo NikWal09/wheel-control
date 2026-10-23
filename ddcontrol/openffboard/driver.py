@@ -29,6 +29,7 @@ VLIMIT_FOC_MIN = 8000  # mV - niżej limit napięcia obcina prąd (i siłę blok
 POLL_INTERVAL = 0.015
 LIVE_INTERVAL = 1.0  # odczyty diagnostyczne (napięcie, stan sterownika)
 QUERY_TIMEOUT = 0.6
+CLIP_LEVEL = 0.97  # moment >= 97% maksimum dla efektów = clipping
 POWER_MAX = 0x7FFF
 G = 100 / 255  # gain 0..255 pokazywany jako %
 
@@ -519,7 +520,11 @@ class OpenFFBoardLink(BaseLink):
         if self._pos is None:
             return None
         torque = (self._torque or 0) / self._power
-        return LiveState(self._pos / 0x7FFF, max(-1.0, min(1.0, torque)))
+        position = self._pos / 0x7FFF
+        # efekty z gry sięgają najwyżej Moc × Udział efektów; w blokadzie moment rośnie z innego powodu
+        game_max = self._settings.get("axis.0.fxratio", 255) / 255
+        clipping = abs(position) < 1.0 and abs(torque) >= CLIP_LEVEL * game_max
+        return LiveState(position, max(-1.0, min(1.0, torque)), clipping)
 
     def _write_settings(self, dev, values: dict[str, int]) -> None:
         self._send(dev, [p.set_(k, v) for k, v in values.items()])

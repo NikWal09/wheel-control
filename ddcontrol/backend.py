@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, QTimer, QUrl, Signal, Slot
@@ -17,6 +18,9 @@ ENUMERATE_EVERY_S = 3.0  # jak często szukać nowych kontrolerów
 LEARN_TIMEOUT_S = 8.0
 WHEEL_SLOTS = 14         # 12 przycisków na panelu + 2 łopatki
 PEDALS = ("throttle", "brake")
+CLIP_WINDOW_S = 3.0      # udział clippingu liczony z ostatnich 3 s
+CLIP_HOLD_S = 0.4        # lampka CLIP świeci jeszcze chwilę po ostatnim obcięciu
+DEFAULT_KT = 0.55        # Nm/A - typowy silnik z hoverboardu, do zmierzenia wagą na obręczy
 
 LINKS: dict[str, type[BaseLink]] = {"ffbeast": FFBeastLink, "openffboard": OpenFFBoardLink}
 SPECS: dict[str, FirmwareSpec] = {k: cls.spec for k, cls in LINKS.items()}
@@ -44,6 +48,7 @@ class Backend(QObject):
     profileStatusChanged = Signal()  # aktywny profil / czy zmodyfikowany
     appearanceChanged = Signal()
     consoleChanged = Signal()
+    forceChanged = Signal()  # budżet siły: ustawienia bazy albo stała momentu silnika
     toast = Signal(str, str, arguments=["message", "kind"])  # kind: info|success|error
 
     def __init__(self, store: Store | None = None, simulate: bool | None = None,
@@ -60,6 +65,8 @@ class Backend(QObject):
         self._position = 0.0
         self._torque = 0.0
         self._peak_torque = 0.0
+        self._clip_hist: deque[bool] = deque(maxlen=int(CLIP_WINDOW_S * 1000 / UI_RATE_MS))
+        self._last_clip = 0.0
         self._started = False
         self._console: list[str] = []
 
@@ -79,6 +86,7 @@ class Backend(QObject):
         self._timer = QTimer(self)
         self._timer.setInterval(UI_RATE_MS)
         self._timer.timeout.connect(self._tick)
+        self.settingsChanged.connect(self.forceChanged)
 
     # --- cykl życia -------------------------------------------------------------
 
@@ -120,6 +128,9 @@ class Backend(QObject):
         if state is not None:
             self._position, self._torque = state.position, state.torque
             self._peak_torque = max(abs(self._torque), self._peak_torque * 0.995)
+            self._clip_hist.append(state.clipping)
+            if state.clipping:
+                self._last_clip = time.monotonic()
             self.stateChanged.emit()
         if time.monotonic() - self._last_enum > ENUMERATE_EVERY_S:
             self._enumerate_joysticks()
@@ -154,6 +165,8 @@ class Backend(QObject):
         self._active, self._info = None, None
         self._settings = {}
         self._position = self._torque = 0.0
+        self._clip_hist.clear()
+        self._last_clip = 0.0
         self.baseChanged.emit()
         self.settingsChanged.emit()
         self.stateChanged.emit()
@@ -338,6 +351,42 @@ class Backend(QObject):
     @Property(float, notify=stateChanged)
     def peakTorque(self) -> float:
         return self._peak_torque
+
+    @Property(bool, notify=stateChanged)
+    def clipping(self) -> bool:
+        """Efekty z gry właśnie obcięte na maksimum (z krótkim podtrzymaniem dla lampki)."""
+        return self._last_clip > 0 and time.monotonic() - self._last_clip < CLIP_HOLD_S
+
+    @Property(float, notify=stateChanged)
+    def clipPercent(self) -> float:
+        """Jaki procent czasu z ostatnich ~3 s efekty były obcięte."""
+        return 100.0 * sum(self._clip_hist) / len(self._clip_hist) if self._clip_hist else 0.0
+
+    # --- budżet siły ------------------------------------------------------------
+
+    @Property(float, notify=forceChanged)
+    def motorKt(self) -> float:
+        return float(self._store.get("motorKt", DEFAULT_KT))
+
+    @Slot(float)
+    def setMotorKt(self, kt: float) -> None:
+        self._store.set("motorKt", round(max(0.05, min(5.0, float(kt))), 3))
+        self.forceChanged.emit()
+
+    @Property("QVariantMap", notify=forceChanged)
+    def forceBudget(self) -> dict:
+        """Maksymalny prąd i moment dla efektów z gry oraz dla blokady (OpenFFBoard + MotorXDrive).
+
+        Gra: Limit prądu × Moc × Udział efektów; blokada ma pełny Limit prądu (ENDSTOP_FULL_TORQUE).
+        """
+        s = self._settings
+        if not self.baseConnected or "xdrive.0.ilimit" not in s or "axis.0.power" not in s:
+            return {"available": False}
+        amps = s["xdrive.0.ilimit"] / 1000
+        share = s["axis.0.power"] / 0x7FFF * s.get("axis.0.fxratio", 255) / 255
+        kt = self.motorKt
+        return {"available": True, "gameA": amps * share, "gameNm": amps * share * kt,
+                "gamePercent": share * 100, "endstopA": amps, "endstopNm": amps * kt, "kt": kt}
 
     # --- baza: ustawienia -----------------------------------------------------
 

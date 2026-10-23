@@ -129,6 +129,7 @@ class FirmwareSpec:
 class LiveState:
     position: float  # -1..+1 względem połowy zakresu obrotu
     torque: float    # -1..+1 względem maksymalnego momentu
+    clipping: bool = False  # efekty z gry obcięte na maksimum (gra chce więcej, niż baza ma ustawione)
 
 
 @dataclass
